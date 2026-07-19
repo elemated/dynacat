@@ -40,9 +40,10 @@ type imageProxyInfo struct {
 }
 
 type application struct {
-	Version   string
-	CreatedAt time.Time
-	Config    config
+	Version    string
+	CreatedAt  time.Time
+	Config     config
+	configPath string // main config file path, used by the editor to write back
 
 	parsedManifest []byte
 
@@ -931,6 +932,11 @@ func (a *application) server() (func() error, func() error) {
 		mux.HandleFunc("GET /api/todo/{listID}", a.handleTodoLoad)
 		mux.HandleFunc("PUT /api/todo/{listID}", a.handleTodoSave)
 	}
+
+	mux.HandleFunc("GET /api/editor/schema", a.handleEditorSchema)
+	mux.HandleFunc("GET /api/editor/status", a.handleEditorStatus)
+	mux.HandleFunc("GET /api/editor/config", a.handleEditorConfigLoad)
+	mux.HandleFunc("POST /api/editor/config", a.handleEditorConfigSave)
 
 	mux.Handle(
 		fmt.Sprintf("GET /static/%s/{path...}", getStaticFSHash()),

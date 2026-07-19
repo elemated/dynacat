@@ -1,0 +1,629 @@
+/* Interactive page editor UI. Only active while document.body has .editing.
+   Kept intentionally subtle: muted borders and text, accents only on hover. */
+
+/* The visual editor is desktop only */
+@media (max-width: 768px) {
+    #editor-toggle {
+        display: none;
+    }
+}
+
+.editor-toggle-icon {
+    width: 1.8rem;
+    height: 1.8rem;
+    stroke: var(--color-text-subdue);
+    transition: stroke 0.2s;
+}
+
+#editor-toggle:hover .editor-toggle-icon {
+    stroke: var(--color-text-highlight);
+}
+
+.editor-toggle-active .editor-toggle-icon {
+    stroke: var(--color-primary);
+}
+
+/* Palette dock */
+.editor-palette {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 10px 16px;
+    background: var(--color-popover-background);
+    border-top: 1px solid var(--color-separator);
+    scrollbar-width: thin;
+}
+
+.editor-palette::-webkit-scrollbar {
+    height: 6px;
+}
+
+.editor-palette::-webkit-scrollbar-thumb {
+    background: var(--color-separator);
+    border-radius: 3px;
+}
+
+.editor-palette-item {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 76px;
+    padding: 8px 6px;
+    border-radius: var(--border-radius);
+    cursor: grab;
+    user-select: none;
+    opacity: 0.75;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.editor-palette-item:hover {
+    opacity: 1;
+    background: var(--color-widget-background);
+}
+
+.editor-palette-icon {
+    width: 22px;
+    height: 22px;
+    background: var(--color-text-subdue);
+    mask: var(--icon-url) center / contain no-repeat;
+    -webkit-mask: var(--icon-url) center / contain no-repeat;
+}
+
+.editor-palette-name {
+    width: 100%;
+    font-size: 1.05rem;
+    line-height: 1.2;
+    text-align: center;
+    color: var(--color-text-subdue);
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Leave room for the dock so it never hides page content */
+body.editing {
+    padding-bottom: 92px;
+}
+
+/* Cards are spaced by the flex gap in edit mode, not the app's inter-widget margin */
+body.editing .widget + .widget {
+    margin-top: 0;
+}
+
+/* Columns become filled container areas holding cards while editing */
+body.editing .page-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 120px;
+    align-self: flex-start;
+    position: relative;
+    padding: 8px;
+    border-radius: var(--border-radius);
+    background: var(--color-widget-background);
+}
+
+body.editing .page-column:not(:has(> .widget)) {
+    align-items: center;
+    justify-content: center;
+}
+
+body.editing .page-column:not(:has(> .widget))::after {
+    content: "Drop widgets here";
+    color: var(--color-text-subdue);
+    font-size: 1.2rem;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Widget cards: a compact icon + title box, no live content */
+.editor-widget {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 14px;
+    border-radius: var(--border-radius);
+    background: var(--color-widget-background-highlight);
+    border: 1px solid var(--color-separator);
+    cursor: grab;
+    transition: border-color 0.15s;
+}
+
+.editor-widget:hover {
+    border-color: var(--color-text-subdue);
+}
+
+.editor-widget-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Container widgets (group / split-column): nested drop zone for child cards */
+.editor-nested {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 8px;
+    min-height: 46px;
+    border-radius: var(--border-radius);
+    background: var(--color-widget-background);
+}
+
+.editor-nested:not(:has(> .widget)) {
+    align-items: center;
+    justify-content: center;
+}
+
+.editor-nested:not(:has(> .widget))::after {
+    content: "Drop widgets here";
+    color: var(--color-text-subdue);
+    font-size: 1.1rem;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* split-column: lay children out side by side so the split is visible */
+.editor-nested-split:has(> .widget) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    align-content: flex-start;
+}
+
+.editor-nested-split > .editor-widget {
+    flex: 1 1 100px;
+    min-width: 100px;
+    align-self: flex-start;
+}
+
+.editor-widget.editor-dragging {
+    opacity: 0.4;
+}
+
+.editor-widget-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.editor-widget-icon {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    background: var(--color-text-subdue);
+    mask: var(--icon-url) center / contain no-repeat;
+    -webkit-mask: var(--icon-url) center / contain no-repeat;
+}
+
+.editor-widget-title {
+    font-size: 1.3rem;
+    color: var(--color-text-base);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.editor-widget-tools {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.editor-widget:hover .editor-widget-tools {
+    opacity: 1;
+}
+
+.editor-tool {
+    display: flex;
+    padding: 3px;
+    border: none;
+    border-radius: var(--border-radius);
+    background: transparent;
+    color: var(--color-text-subdue);
+    cursor: pointer;
+}
+
+.editor-tool:hover {
+    color: var(--color-text-highlight);
+}
+
+.editor-tool svg {
+    width: 15px;
+    height: 15px;
+}
+
+/* Column remove control: sits in the column's background area, below the cards */
+.editor-column-tools {
+    display: flex;
+    justify-content: center;
+    padding-top: 8px;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+}
+
+.editor-column-tools:hover {
+    opacity: 1;
+}
+
+.editor-column-remove {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border: none;
+    border-radius: var(--border-radius);
+    background: transparent;
+    color: var(--color-text-subdue);
+    font: inherit;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.editor-column-remove:hover {
+    color: var(--color-negative);
+}
+
+.editor-icon-inline {
+    display: flex;
+}
+
+.editor-icon-inline svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Drop marker: absolute overlay so it does not reflow the widgets */
+.editor-drop-marker {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--color-primary);
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+/* Vertical variant for horizontal (split-column) drop zones */
+.editor-drop-marker-v {
+    left: auto;
+    right: auto;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    height: auto;
+}
+
+/* Inter-column add line: hidden until hover */
+.editor-add-column {
+    position: relative;
+    flex: 0 0 14px;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.editor-add-column::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--color-primary);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.editor-add-column-plus {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: var(--color-background);
+    transform: scale(0);
+    transition: transform 0.15s ease;
+}
+
+.editor-add-column-plus svg {
+    width: 13px;
+    height: 13px;
+}
+
+.editor-add-column:hover::before {
+    opacity: 0.5;
+}
+
+.editor-add-column:hover .editor-add-column-plus {
+    transform: scale(1);
+}
+
+/* Add / remove page buttons */
+.editor-add-page,
+.editor-remove-page {
+    cursor: pointer;
+    color: var(--color-text-subdue);
+    opacity: 0.6;
+    font-size: 0.9em;
+    transition: opacity 0.2s, color 0.2s;
+}
+
+.editor-add-page:hover,
+.editor-remove-page:hover {
+    opacity: 1;
+}
+
+.editor-add-page:hover {
+    color: var(--color-text-highlight);
+}
+
+.editor-remove-page:hover {
+    color: var(--color-negative);
+}
+
+/* Modal */
+.editor-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.editor-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 20px;
+    border-radius: var(--border-radius);
+    background: var(--color-widget-background);
+    border: 1px solid var(--color-separator);
+}
+
+.editor-modal-title {
+    font-size: 1.6rem;
+    color: var(--color-text-highlight);
+}
+
+.editor-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.editor-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.editor-field-label {
+    font-size: 1.2rem;
+    color: var(--color-text-subdue);
+}
+
+.editor-required {
+    margin-left: 3px;
+    color: var(--color-primary);
+    font-weight: bold;
+}
+
+/* Inputs: a clearly visible raised surface, lighter than the modal.
+   Scoped to .editor-modal so it outweighs the app's input[type="text"] reset. */
+.editor-modal .editor-input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--color-separator);
+    background: var(--color-widget-background-highlight);
+    color: var(--color-text-base);
+    font: inherit;
+    color-scheme: dark;
+}
+
+.editor-modal .editor-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+/* Checkbox field: input and label on one row */
+.editor-check {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.editor-check-label {
+    font-size: 1.3rem;
+    color: var(--color-text-base);
+}
+
+.editor-modal .editor-check input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    border: 1.5px solid var(--color-text-subdue);
+    border-radius: 5px;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.editor-modal .editor-check input[type="checkbox"]:hover {
+    border-color: var(--color-primary);
+}
+
+.editor-modal .editor-check input[type="checkbox"]:checked {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.editor-modal .editor-check input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 4px;
+    height: 9px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+select.editor-input {
+    appearance: none;
+    cursor: pointer;
+}
+
+.editor-textarea {
+    min-height: 90px;
+    resize: vertical;
+    font-family: monospace;
+}
+
+.editor-icon-preview {
+    width: 26px;
+    height: 26px;
+    margin-top: 4px;
+}
+
+.editor-collapsible summary {
+    cursor: pointer;
+    padding: 6px 0;
+    color: var(--color-text-subdue);
+    font-size: 1.2rem;
+}
+
+.editor-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.editor-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--color-separator);
+    border-radius: var(--border-radius);
+    background: transparent;
+    color: var(--color-text-base);
+    cursor: pointer;
+    font: inherit;
+}
+
+.editor-btn:hover {
+    border-color: var(--color-text-subdue);
+}
+
+.editor-btn-primary {
+    background: var(--color-primary);
+    color: var(--color-background);
+    border-color: var(--color-primary);
+}
+
+.editor-btn-danger {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-negative);
+    border-color: var(--color-negative);
+}
+
+.editor-btn-danger:hover {
+    background: var(--color-negative);
+    color: var(--color-background);
+    border-color: var(--color-negative);
+}
+
+.editor-confirm-message {
+    font-size: 1.35rem;
+    color: var(--color-text-base);
+}
+
+/* Layout picker */
+.editor-layout-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.editor-layout-option {
+    display: flex;
+    gap: 3px;
+    height: 54px;
+    padding: 6px;
+    border-radius: var(--border-radius);
+    border: 2px solid var(--color-separator);
+    cursor: pointer;
+}
+
+.editor-layout-option.selected {
+    border-color: var(--color-primary);
+}
+
+.editor-layout-cell {
+    background: var(--color-text-subdue);
+    border-radius: 2px;
+}
+
+.editor-layout-cell-small {
+    flex: 0 0 20%;
+}
+
+.editor-layout-cell-full {
+    flex: 1;
+}
+
+/* Toasts */
+.editor-toasts {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 70;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.editor-toast {
+    padding: 9px 15px;
+    font-size: 1.2rem;
+    border-radius: var(--border-radius);
+    background: var(--color-popover-background);
+    border: 1px solid var(--color-separator);
+}

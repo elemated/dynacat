@@ -1,3 +1,8 @@
+# Changes for 3.0.0
+- Fixed an issue where subrequests were not detected properly in `dynawidgets`
+- Fixed `dynawidgets` protocol handling 
+- Added an option to visually edit your configuration
+
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one
 - Added support for icons in the page title 

@@ -288,7 +288,7 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 		}
 
 		// Inside containers (e.g. Docker), disk.Partitions(false) only returns
-		// devices starting with /dev/ — the overlay root filesystem is skipped.
+		// devices starting with /dev/ - the overlay root filesystem is skipped.
 		// Fall back to "/" so disk usage is still reported without requiring a
 		// host bind-mount.
 		if len(addedMountpoints) == 0 {

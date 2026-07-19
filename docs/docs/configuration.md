@@ -582,10 +582,10 @@ A keybind is one or more keys separated by spaces. Each key is a single letter o
 
 | Config value | Behavior |
 | ------------ | -------- |
-| `h` | Automatically expanded to `d h` — press `d` then `h` |
+| `h` | Automatically expanded to `d h` - press `d` then `h` |
 | `d h` | Press `d`, release, then press `h` within 1 second |
 | `d a c` | Three-key sequence: `d` → `a` → `c` |
-| `1` | Automatically expanded to `d 1` — press `d` then `1` |
+| `1` | Automatically expanded to `d 1` - press `d` then `1` |
 
 > [!NOTE]
 >
