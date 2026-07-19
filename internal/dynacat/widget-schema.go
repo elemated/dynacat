@@ -163,7 +163,7 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"token":      {Advanced: true},
 	},
 	"search": {
-		"search-engine":         {Options: []string{"duckduckgo", "google", "bing", "perplexity", "kagi", "startpage", "qwant", "brave"}},
+		"search-engine":         {Options: []string{"duckduckgo", "google", "bing", "perplexity", "kagi", "startpage", "qwant", "brave", "custom"}},
 		"autocomplete-provider": {Options: []string{"duckduckgo", "brave"}},
 	},
 	"extension": {

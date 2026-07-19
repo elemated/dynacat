@@ -13,6 +13,7 @@
     height: 1.8rem;
     stroke: var(--color-text-subdue);
     transition: stroke 0.2s;
+    transform: translateY(2px);
 }
 
 #editor-toggle:hover .editor-toggle-icon {
@@ -429,8 +430,8 @@ body.editing .page-column:not(:has(> .widget))::after {
 }
 
 .editor-field-label {
-    font-size: 1.2rem;
-    color: var(--color-text-subdue);
+    font-size: 1.3rem;
+    color: var(--color-text-base);
 }
 
 .editor-required {
@@ -467,6 +468,7 @@ body.editing .page-column:not(:has(> .widget))::after {
 
 .editor-check-label {
     font-size: 1.3rem;
+    line-height: 1;
     color: var(--color-text-base);
 }
 

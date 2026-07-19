@@ -521,7 +521,9 @@ function renderField(field, value) {
     let input;
     let read;
 
-    if (field.kind === "select") {
+    if (field.kind === "select" && field.name === "search-engine") {
+        return renderSearchEngineField(field, value);
+    } else if (field.kind === "select") {
         input = document.createElement("select");
         input.className = "editor-input";
         input.append(new Option("-", "")); // allow leaving the field unset
@@ -548,6 +550,30 @@ function renderField(field, value) {
     if (field.kind === "icon") wrapper.append(iconPreview(input));
 
     return { field, wrapper, read };
+}
+
+// renderSearchEngineField adds a custom-URL input that shows only when "custom" is picked.
+function renderSearchEngineField(field, value) {
+    const known = (field.options || []).filter((o) => o !== "custom");
+    const isCustom = value && !known.includes(value);
+
+    const select = document.createElement("select");
+    select.className = "editor-input";
+    select.append(new Option("-", ""));
+    for (const opt of field.options || []) select.append(new Option(opt, opt));
+    select.value = isCustom ? "custom" : value || "";
+
+    const customInput = inputEl("text");
+    customInput.placeholder = "https://example.com/search?q={QUERY}";
+    customInput.style.display = select.value === "custom" ? "" : "none";
+    if (isCustom) customInput.value = value;
+    select.addEventListener("change", () => {
+        customInput.style.display = select.value === "custom" ? "" : "none";
+    });
+
+    const wrapper = labeled(field.label, select, field.required);
+    wrapper.append(customInput);
+    return { field, wrapper, read: () => (select.value === "custom" ? customInput.value.trim() || undefined : select.value || undefined) };
 }
 
 function iconPreview(input) {
