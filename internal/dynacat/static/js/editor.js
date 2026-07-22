@@ -165,7 +165,8 @@ function buildPalette() {
         e.preventDefault();
         dock.scrollLeft += e.deltaY;
     }, { passive: false });
-    for (const schema of state.schemas) {
+    const sorted = [...state.schemas].sort((a, b) => a.label.localeCompare(b.label));
+    for (const schema of sorted) {
         if (schema.hidden) continue;
         const item = div("editor-palette-item");
         item.draggable = true;
@@ -404,23 +405,28 @@ const PAGE_LAYOUTS = [
 function buildAddPageButton() {
     const nav = document.querySelector(".header .nav");
     if (!nav) return;
-    const add = div("editor-ui editor-add-page nav-item", "Add +");
-    add.addEventListener("click", openLayoutModal);
-    nav.append(add);
 
-    const remove = div("editor-ui editor-remove-page nav-item", "Remove page");
-    remove.addEventListener("click", removeCurrentPage);
-    nav.append(remove);
+    // A single sleek control group so page management reads as one intentional
+    // toolbar rather than three loose text links.
+    const group = div("editor-ui editor-page-tools");
+    group.append(
+        pageToolButton("editor-add-page", iconPlus, "Add page", "Create a new page", openLayoutModal),
+        pageToolButton("editor-edit-page", iconCog, "Edit page", "Edit this page's name, icon and options", openEditPageModal),
+        pageToolButton("editor-remove-page", iconTrash, "Remove page", "Delete this page", removeCurrentPage),
+    );
+    nav.append(group);
+}
 
-    const styling = div("editor-ui editor-styling-btn nav-item", "Styling");
-    styling.title = "Edit theme colors and branding";
-    styling.addEventListener("click", openStylingModal);
-    nav.append(styling);
+function pageToolButton(className, icon, label, title, onClick) {
+    const btn = div(`editor-page-btn ${className}`);
+    btn.title = title;
+    btn.append(iconSpan(icon), div("editor-page-btn-label", label));
+    btn.addEventListener("click", onClick);
+    return btn;
 }
 
 // In edit mode, clicking the theme picker opens the styling editor instead of
-// switching the active preset. The explicit "Styling" nav button is the fallback
-// (and the only entry point when the theme picker is disabled).
+// switching the active preset. This is the entry point for editing styling.
 function setupStylingTrigger() {
     const picker = document.querySelector(".header .theme-picker");
     if (!picker) return;
@@ -439,6 +445,66 @@ function removeCurrentPage() {
         // Keep editing (flag stays set) and land on home once the server reloads.
         commitAndNavigate({ op: "removePage", page: state.pageIndex }, () => (location.href = `${PD.baseURL}/`));
     });
+}
+
+// openEditPageModal edits the current page's name, icon and page-level options.
+function openEditPageModal() {
+    const page = state.config.pages[state.pageIndex];
+    if (!page) return;
+    if (page.writable === false) {
+        toast("This page's file is read only, it cannot be edited", "negative");
+        return;
+    }
+
+    const opt = page.options || {};
+    const widths = ["", "default", "wide", "slim"];
+    const controls = [];
+    const reg = (key, ctl) => {
+        controls.push({ key, read: ctl.read });
+        return ctl.wrapper;
+    };
+
+    const basic = div("editor-fields");
+    basic.append(reg("name", textField("Name", opt["name"] || page.title, "Page name")));
+    basic.append(reg("name-icon", iconField("Icon", opt["name-icon"], "e.g. mdi:home or /assets/icon.svg")));
+    basic.append(reg("slug", textField("Slug (URL)", opt["slug"], "auto from name")));
+
+    const layout = div("editor-fields");
+    layout.append(reg("width", selectField("Width", opt["width"], widths)));
+    layout.append(reg("key-bind", textField("Key bind", opt["key-bind"], "e.g. d h")));
+    layout.append(reg("center-vertically", checkField("Center vertically", opt["center-vertically"])));
+
+    const nav = div("editor-fields");
+    nav.append(reg("hide-from-navigation", checkField("Hide from navigation", opt["hide-from-navigation"])));
+    nav.append(reg("hide-desktop-navigation", checkField("Hide desktop navigation", opt["hide-desktop-navigation"])));
+    nav.append(reg("show-mobile-header", checkField("Show mobile header", opt["show-mobile-header"])));
+    nav.append(reg("desktop-navigation-width", selectField("Desktop navigation width", opt["desktop-navigation-width"], widths)));
+
+    const sections = [
+        sectionTitle("Basics"),
+        basic,
+        sectionTitle("Layout"),
+        layout,
+        collapsible("Navigation", nav),
+    ];
+
+    openModal("Page options", sections, () => {
+        const fields = {};
+        for (const c of controls) fields[c.key] = c.read();
+        savePageOptions(fields);
+    });
+}
+
+// savePageOptions commits the page edit, then reloads once the server hot-reloads so
+// the navigation and header (rendered outside the editor canvas) reflect the change.
+// The slug may have changed, so it navigates to the page's fresh slug.
+async function savePageOptions(fields) {
+    const before = await serverGeneration();
+    if (!(await commit({ op: "editPage", page: state.pageIndex, fields }))) return;
+    await waitForServerReload(before);
+    const cfg = await apiGet("/config").catch(() => null);
+    const updated = cfg && cfg.pages[state.pageIndex];
+    location.href = updated ? `${PD.baseURL}/${updated.slug}` : `${PD.baseURL}/`;
 }
 
 function openLayoutModal() {
@@ -886,6 +952,26 @@ function areaField(label, value) {
     return { wrapper: labeled(label, input), input, read: () => input.value.trim() };
 }
 
+// iconField is a text input with a live preview of the resolved icon (si/di/mdi/sh
+// shorthand or a URL), matching the widget icon field.
+function iconField(label, value, placeholder) {
+    const input = inputEl("text");
+    if (value) input.value = value;
+    if (placeholder) input.placeholder = placeholder;
+    const wrapper = labeled(label, input);
+    wrapper.append(iconPreview(input));
+    return { wrapper, input, read: () => input.value.trim() };
+}
+
+// selectField builds a dropdown. An empty-string option renders as "-" (unset).
+function selectField(label, value, options) {
+    const input = document.createElement("select");
+    input.className = "editor-input";
+    for (const opt of options) input.append(new Option(opt === "" ? "-" : opt, opt));
+    input.value = value || "";
+    return { wrapper: labeled(label, input), input, read: () => input.value };
+}
+
 //
 // Color conversions (hex <-> rgb <-> hsl). HSL uses the same "H S L" triple the
 // yaml theme config expects.
@@ -1136,4 +1222,5 @@ function toolButton(title, svg, onClick) {
 
 const iconPlus = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>`;
 const iconPencil = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z"/></svg>`;
+const iconCog = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.751-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.397-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.241.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.991l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.281Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>`;
 const iconTrash = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>`;

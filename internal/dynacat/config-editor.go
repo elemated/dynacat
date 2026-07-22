@@ -33,6 +33,7 @@ type editorPageView struct {
 	Width    string             `json:"width"`
 	File     string             `json:"file"`
 	Writable bool               `json:"writable"`
+	Options  map[string]string  `json:"options"` // raw scalar page-level options (name-icon, key-bind, ...)
 	Columns  []editorColumnView `json:"columns"`
 }
 
@@ -142,6 +143,15 @@ func pageNodeToView(pageNode *yaml.Node, path string) editorPageView {
 		Width:    scalarValue(getMappingValue(pageNode, "width")),
 		File:     filepath.Base(path),
 		Writable: pathWritable(path),
+		Options:  map[string]string{},
+	}
+
+	// All top-level scalar keys are surfaced so the editor can prefill the page
+	// options modal (name-icon, key-bind, hide-from-navigation, ...).
+	for i := 0; i+1 < len(pageNode.Content); i += 2 {
+		if v := pageNode.Content[i+1]; v.Kind == yaml.ScalarNode {
+			pv.Options[pageNode.Content[i].Value] = v.Value
+		}
 	}
 
 	columns := getMappingValue(pageNode, "columns")
@@ -196,10 +206,10 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 	}
 
 	if m.Op == "addPage" {
-		if err := mutateAddPage(documentRoot(mainDoc), m); err != nil {
-			return err
+		if separatePageFilesEnabled() {
+			return a.addPageFile(mainDoc, mainPath, m)
 		}
-		return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
+		return a.addPageInline(mainDoc, mainPath, m)
 	}
 
 	if m.Op == "editStyling" {
@@ -207,6 +217,16 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 		applyStylingSection(root, "theme", m.Theme)
 		applyStylingSection(root, "branding", m.Branding)
 		return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
+	}
+
+	if m.Op == "editPage" {
+		path, doc, pageNode, err := resolvePageNode(mainDoc, mainPath, m.Page)
+		if err != nil {
+			return err
+		}
+		applyPageFields(pageNode, m.Fields)
+		setBlockStyleDeep(pageNode)
+		return a.writeConfigCandidate(path, marshalDocument(doc))
 	}
 
 	if m.Op == "removePage" {
@@ -233,7 +253,26 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 		return err
 	}
 
+	// Keep the edited page in readable block style; a widget inserted into a `[]`
+	// sequence would otherwise collapse to `[{type: reddit, ...}]` flow style.
+	setBlockStyleDeep(pageNode)
+
 	return a.writeConfigCandidate(path, marshalDocument(doc))
+}
+
+// setBlockStyleDeep forces block (multi-line) style on every mapping and sequence
+// in the subtree so editor writes stay easy to read. Scalar nodes keep their own
+// style so quoting (e.g. a single-quoted URL) is preserved.
+func setBlockStyleDeep(n *yaml.Node) {
+	if n == nil {
+		return
+	}
+	if n.Kind == yaml.MappingNode || n.Kind == yaml.SequenceNode {
+		n.Style = 0
+	}
+	for _, c := range n.Content {
+		setBlockStyleDeep(c)
+	}
 }
 
 func mutateColumns(columns *yaml.Node, m editorMutation) error {
@@ -342,13 +381,46 @@ func isIntPrefix(prefix, full []int) bool {
 	return true
 }
 
-func mutateAddPage(root *yaml.Node, m editorMutation) error {
-	pages := getMappingValue(root, "pages")
-	if pages == nil {
-		pages = sequenceNode()
-		addPair(root, "pages", pages)
+// applyPageFields upserts page-level options. Empty strings and false booleans drop
+// the key so the YAML stays minimal; `name` is never dropped since a page needs one.
+// New keys land above `columns` so page metadata stays grouped at the top.
+func applyPageFields(pageNode *yaml.Node, fields map[string]any) {
+	for _, k := range sortedKeys(fields) {
+		v := fields[k]
+		if k == "name" && isEmptyValue(v) {
+			continue
+		}
+		if isEmptyValue(v) || v == false {
+			removeMappingKey(pageNode, k)
+			continue
+		}
+		setPageMappingKey(pageNode, k, valueNode(v))
 	}
+}
 
+// setPageMappingKey updates an existing key in place, otherwise inserts it before
+// the `columns` entry (falling back to append) so metadata precedes the layout.
+func setPageMappingKey(m *yaml.Node, key string, value *yaml.Node) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			m.Content[i+1] = value
+			return
+		}
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == "columns" {
+			out := make([]*yaml.Node, 0, len(m.Content)+2)
+			out = append(out, m.Content[:i]...)
+			out = append(out, scalarNode(key), value)
+			out = append(out, m.Content[i:]...)
+			m.Content = out
+			return
+		}
+	}
+	addPair(m, key, value)
+}
+
+func newPageMapping(m editorMutation) *yaml.Node {
 	page := newMappingNode()
 	addPair(page, "name", scalarNode(orDefault(m.Title, "New Page")))
 
@@ -364,9 +436,92 @@ func mutateAddPage(root *yaml.Node, m editorMutation) error {
 		columns.Content = append(columns.Content, col)
 	}
 	addPair(page, "columns", columns)
+	return page
+}
 
+// separatePageFilesEnabled reports whether a new page created in the editor gets
+// its own file linked via `$include`. Set EDITOR_SEPARATE_PAGE_FILES to false/0/f
+// to write new pages inline into the main config instead.
+func separatePageFilesEnabled() bool {
+	switch os.Getenv("EDITOR_SEPARATE_PAGE_FILES") {
+	case "false", "0", "f":
+		return false
+	}
+	return true
+}
+
+// addPageInline appends the new page directly to the main config's `pages` list.
+func (a *application) addPageInline(mainDoc *yaml.Node, mainPath string, m editorMutation) error {
+	root := documentRoot(mainDoc)
+	pages := getMappingValue(root, "pages")
+	if pages == nil {
+		pages = sequenceNode()
+		addPair(root, "pages", pages)
+	}
+
+	page := newPageMapping(m)
+	setBlockStyleDeep(page)
 	pages.Content = append(pages.Content, page)
+
+	return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
+}
+
+// addPageFile writes the new page to its own YAML file and links it into the main
+// config via `- $include: file.yml`, matching how the pre-shipped pages are kept in
+// separate files. On validation failure both the new file and the main edit roll back.
+func (a *application) addPageFile(mainDoc *yaml.Node, mainPath string, m editorMutation) error {
+	pages := getMappingValue(documentRoot(mainDoc), "pages")
+	if pages == nil {
+		pages = sequenceNode()
+		addPair(documentRoot(mainDoc), "pages", pages)
+	}
+
+	dir := filepath.Dir(mainPath)
+	file := uniquePageFileName(dir, orDefault(m.Title, "New Page"))
+	pagePath := filepath.Join(dir, file)
+
+	// The included file holds a single-item sequence (`- name: ...`), the form the
+	// pre-shipped page files use.
+	page := newPageMapping(m)
+	setBlockStyleDeep(page)
+	pageDoc := &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{
+		{Kind: yaml.SequenceNode, Content: []*yaml.Node{page}},
+	}}
+	if err := os.WriteFile(pagePath, marshalDocument(pageDoc), 0o644); err != nil {
+		if isWriteBlockedError(err) {
+			return &editorPermissionError{pagePath}
+		}
+		return err
+	}
+
+	include := newMappingNode()
+	addPair(include, "$include", scalarNode(file))
+	pages.Content = append(pages.Content, include)
+
+	if err := a.writeConfigCandidate(mainPath, marshalDocument(mainDoc)); err != nil {
+		os.Remove(pagePath) // drop the orphaned page file when the include is rejected
+		return err
+	}
 	return nil
+}
+
+// uniquePageFileName turns a page title into a config-directory-relative filename
+// that does not collide with an existing file.
+func uniquePageFileName(dir, title string) string {
+	base := titleToSlug(title)
+	base = pageFileNamePattern.ReplaceAllString(base, "")
+	base = strings.Trim(base, "-")
+	if base == "" {
+		base = "page"
+	}
+
+	name := base + ".yml"
+	for i := 2; ; i++ {
+		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
+			return name
+		}
+		name = fmt.Sprintf("%s-%d.yml", base, i)
+	}
 }
 
 func (a *application) writeConfigCandidate(path string, candidate []byte) error {

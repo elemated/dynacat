@@ -59,6 +59,21 @@ environment:
   - BIND=127.0.0.1
 ```
 
+### EDITOR_SEPARATE_PAGE_FILES
+
+Controls where the interactive page editor stores a new page. By default each new page is written to its own file (e.g. `my-page.yml`) in the config directory and linked into the main config with a `$include` line, which keeps multiple pages easy to manage.
+
+Set it to `false`, `0`, or `f` to write new pages inline into the main config file (`dynacat.yml`) instead:
+
+```yaml
+environment:
+  - EDITOR_SEPARATE_PAGE_FILES=false
+```
+
+> [!NOTE]
+>
+> This only affects pages created after the change. Existing pages, whether inline or included, keep their current location.
+
 ## Dynamic Refreshing
 
 Dynamic refreshing allows widgets to automatically update their data at specified intervals. This behavior can be controlled through two mechanisms:
@@ -101,6 +116,7 @@ The global page update interval can be disabled by:
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `ENABLE_DYNAMIC_UPDATE` | `true` | Set to `false`, `0`, or `f` to disable automatic widget refresh. Useful for static views or default glance behaviour. |
+| `EDITOR_SEPARATE_PAGE_FILES` | `true` | Set to `false`, `0`, or `f` to write new pages inline into the main config instead of a separate `$include` file. |
 
 ## ZFS Mountpoint Support
 

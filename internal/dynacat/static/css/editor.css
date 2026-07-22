@@ -357,45 +357,53 @@ body.editing .page-column:not(:has(> .widget))::after {
     transform: scale(1);
 }
 
-/* Add / remove page buttons */
-.editor-add-page,
-.editor-remove-page {
-    cursor: pointer;
+/* Page management toolbar: a sleek pill group sitting in the header nav */
+.editor-page-tools {
+    display: inline-flex;
+    align-self: center;
+    align-items: center;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--color-widget-background);
+    border: 1px solid var(--color-separator);
+}
+
+.editor-page-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: 999px;
     color: var(--color-text-subdue);
-    opacity: 0.6;
-    font-size: 0.9em;
-    transition: opacity 0.2s, color 0.2s;
+    font-size: 0.82em;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
 }
 
-.editor-add-page:hover,
-.editor-remove-page:hover {
-    opacity: 1;
+.editor-page-btn .editor-icon-inline svg {
+    width: 14px;
+    height: 14px;
 }
 
-.editor-add-page:hover,
-.editor-styling-btn:hover {
+.editor-page-btn:hover {
     color: var(--color-text-highlight);
+    background: var(--color-widget-background-highlight);
 }
 
-.editor-styling-btn {
-    cursor: pointer;
-    color: var(--color-text-subdue);
-    opacity: 0.6;
-    font-size: 0.9em;
-    transition: opacity 0.2s, color 0.2s;
+.editor-add-page:hover {
+    color: var(--color-primary);
 }
 
-.editor-styling-btn:hover {
-    opacity: 1;
+.editor-remove-page:hover {
+    color: var(--color-negative);
 }
 
 /* In edit mode the theme picker opens the styling editor on click */
 body.editing .editor-styling-trigger {
     cursor: pointer;
-}
-
-.editor-remove-page:hover {
-    color: var(--color-negative);
 }
 
 /* Modal */

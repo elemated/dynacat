@@ -92,6 +92,9 @@ func maybeCopySliceWithoutZeroValues[T int | float64](values []T) []T {
 
 var urlSchemePattern = regexp.MustCompile(`^[a-z]+:\/\/`)
 
+// pageFileNamePattern strips characters not safe in a page filename slug.
+var pageFileNamePattern = regexp.MustCompile(`[^a-z0-9-]`)
+
 func stripURLScheme(url string) string {
 	return urlSchemePattern.ReplaceAllString(url, "")
 }
