@@ -30,6 +30,27 @@ const [datesEntranceLeft, datesEntranceRight] = directions(
 
 const undoEntrance = slideFade({ direction: "left", distance: "100%", duration: 300 });
 
+// MDI icon paths (mdi:monitor, mdi:disc, mdi:movie-open-outline, mdi:television-classic)
+// shown left of a release title so the release kind is obvious at a glance.
+const releaseTypes = {
+    digital: {
+        label: "Digital release",
+        path: "M21,16H3V4H21M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2Z",
+    },
+    physical: {
+        label: "Physical release",
+        path: "M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H5M12,5C15.09,5 17.82,7.04 18.7,10H16A1,1 0 0,0 15,11V13A1,1 0 0,0 16,14H18.71C17.82,16.97 15.09,19 12,19A7,7 0 0,1 5,12A7,7 0 0,1 12,5M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10Z",
+    },
+    cinema: {
+        label: "In cinemas",
+        path: "M20.84 2.18L16.91 2.96L19.65 6.5L21.62 6.1L20.84 2.18M13.97 3.54L12 3.93L14.75 7.46L16.71 7.07L13.97 3.54M9.07 4.5L7.1 4.91L9.85 8.44L11.81 8.05L9.07 4.5M4.16 5.5L3.18 5.69C2.1 5.9 1.39 6.96 1.61 8.04L2 10L6.9 9.03L4.16 5.5M20 12V20H4V12H20M22 10H2V20C2 21.11 2.9 22 4 22H20C21.11 22 22 21.11 22 20V10Z",
+    },
+    episode: {
+        label: "Episode",
+        path: "M8.16,3L6.75,4.41L9.34,7H4C2.89,7 2,7.89 2,9V19C2,20.11 2.89,21 4,21H20C21.11,21 22,20.11 22,19V9C22,7.89 21.11,7 20,7H14.66L17.25,4.41L15.84,3L12,6.84L8.16,3M4,9H17V19H4V9M19.5,9A1,1 0 0,1 20.5,10A1,1 0 0,1 19.5,11A1,1 0 0,1 18.5,10A1,1 0 0,1 19.5,9M19.5,12A1,1 0 0,1 20.5,13A1,1 0 0,1 19.5,14A1,1 0 0,1 18.5,13A1,1 0 0,1 19.5,12Z",
+    },
+};
+
 export default function(element) {
     // Guard against double-initialization: a built calendar still carries the
     // "calendar" class, so if setup runs again it must not rebuild it (which would
@@ -197,7 +218,7 @@ function Header(nextClicked, prevClicked, undoClicked) {
 }
 
 function Dates(firstDay, releases) {
-    let dates, lastRenderedDate;
+    let dates, lastRenderedDate, animating = false;
 
     // applyMarkers (re)draws release indicators + popovers onto the day cells for
     // the given month using whatever release data is currently cached.
@@ -217,6 +238,12 @@ function Dates(firstDay, releases) {
             if (existing) existing.remove();
 
             const cellDate = new Date(firstCellDate.getFullYear(), firstCellDate.getMonth(), firstCellDate.getDate() + i);
+            // Skip spill-over cells from adjacent months so a release only appears
+            // under its own month, never under a neighbouring month's grid.
+            if (cellDate.getMonth() !== newDate.getMonth() || cellDate.getFullYear() !== newDate.getFullYear()) {
+                continue;
+            }
+
             const items = data[isoDate(cellDate)];
             if (items && items.length) {
                 cell.append(releaseMarker(items));
@@ -266,17 +293,20 @@ function Dates(firstDay, releases) {
     };
 
     const update = function(now, newDate) {
-        if (lastRenderedDate === undefined || datesWithinSameMonth(newDate, lastRenderedDate)) {
+        // Same month (or first render), or a transition is already running: apply the
+        // new month straight away. Starting a second slide over an in-flight one is
+        // what made the refresh animation occasionally play twice.
+        if (lastRenderedDate === undefined || datesWithinSameMonth(newDate, lastRenderedDate) || animating) {
             updateFullMonth(now, newDate);
             return;
         }
 
         const next = newDate > lastRenderedDate;
-        dates.animateUpdate(
-            () => updateFullMonth(now, newDate),
-            next ? datesExitLeft : datesExitRight,
-            next ? datesEntranceRight : datesEntranceLeft,
-        );
+        animating = true;
+        dates.animate(next ? datesExitLeft : datesExitRight, () => {
+            updateFullMonth(now, newDate);
+            dates.animate(next ? datesEntranceRight : datesEntranceLeft, () => { animating = false; });
+        });
     }
 
     return elem().append(
@@ -304,6 +334,7 @@ function releaseMarker(items) {
             "data-popover-type": "html",
             "data-popover-position": "above",
             "data-popover-max-width": "340px",
+            "data-popover-hide-delay": "80",
         })
         .append(
             elem().classes("calendar-release-indicator"),
@@ -316,7 +347,17 @@ function releaseCard(item) {
         elem().classes("size-h6", "color-subdue").text(item.source)
     );
 
-    body.append(elem().classes("color-highlight", "text-truncate").text(item.title));
+    const titleRow = elem().classes("flex", "items-center", "gap-7", "min-width-0");
+    const type = releaseTypes[item.type];
+    if (type) {
+        titleRow.append(
+            elem().classes("calendar-release-type-icon")
+                .attr("title", type.label)
+                .html(`<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.9" stroke-linejoin="round"><path d="${type.path}"/></svg>`)
+        );
+    }
+    titleRow.append(elem().classes("color-highlight", "text-truncate").text(item.title));
+    body.append(titleRow);
 
     if (item.description) {
         body.append(elem().classes("color-base", "text-truncate-2-lines", "margin-top-3").text(item.description));
@@ -328,10 +369,20 @@ function releaseCard(item) {
     ).classes("calendar-release-card", "flex", "items-center", "gap-10");
 
     if (item.thumbnail) {
+        const spinner = elem().classes("calendar-thumb-spinner");
+        const img = elem("img").classes("thumbnail").attrs({ src: item.thumbnail, loading: "lazy", alt: "" });
+
+        // These images live inside a hidden popover subtree and are built after the
+        // page's global lazy-image pass, so drive the reveal + spinner ourselves:
+        // fade the poster in (via the .loaded/.cached classes the lazy CSS keys off)
+        // and drop the spinner once the image resolves.
+        const reveal = (cls) => { img.classes(cls); spinner.hide(); };
+        img.on("load", () => reveal("loaded")).on("error", () => spinner.hide());
+        // A browser-cached image can already be complete before listeners attach.
+        if (img.complete) img.naturalWidth > 0 ? reveal("cached") : spinner.hide();
+
         card.append(
-            elem().classes("calendar-release-thumb", "thumbnail-container").append(
-                elem("img").classes("thumbnail").attrs({ src: item.thumbnail, loading: "lazy", alt: "" })
-            )
+            elem().classes("calendar-release-thumb", "thumbnail-container").append(spinner, img)
         );
     }
 

@@ -4,6 +4,9 @@
 - Added an option to visually edit your configuration
 - Fixed Navidrome in currently playing
 - Added an option to see bookmarks in search widget
+- Fixed issues with releases performence in `calendar` widget 
+- Made image fetching in `currently playing` more reliable
+- Added a function in `calendar` widget when showing releases to also show release type
 
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one

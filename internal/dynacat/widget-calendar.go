@@ -10,7 +10,34 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
+
+// stringListField accepts either a YAML block/flow list or a single scalar value
+// (optionally comma separated), so users can write `release-types: digital` or a
+// plain block list without needing flow brackets.
+type stringListField []string
+
+func (s *stringListField) UnmarshalYAML(node *yaml.Node) error {
+	var list []string
+	if err := node.Decode(&list); err == nil {
+		*s = list
+		return nil
+	}
+
+	var single string
+	if err := node.Decode(&single); err != nil {
+		return err
+	}
+
+	for _, part := range strings.Split(single, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			*s = append(*s, trimmed)
+		}
+	}
+	return nil
+}
 
 var calendarWidgetTemplate = mustParseTemplate("calendar.html", "widget-base.html")
 
@@ -48,6 +75,10 @@ type calendarReleaseItem struct {
 	Thumbnail   string `json:"thumbnail"`
 	Link        string `json:"link"`
 
+	// Type is the kind of release this entry represents ("digital", "physical",
+	// "cinema", "episode"), used by the client to label the release and show an icon.
+	Type string `json:"type"`
+
 	// dedupKey identifies the underlying movie/episode so the same release coming
 	// from multiple hosts of the same type is only shown once. Unexported so it is
 	// not serialized to the client.
@@ -65,9 +96,11 @@ type calendarWidget struct {
 	FirstDay               int                      `yaml:"-"`
 	Frameless              bool                     `yaml:"frameless"`
 	Hosts                  []calendarReleaseService `yaml:"hosts"`
+	ReleaseTypes           stringListField          `yaml:"release-types"`
 
-	cachedHTML       template.HTML `yaml:"-"`
-	releasesInterval time.Duration `yaml:"-"`
+	cachedHTML          template.HTML   `yaml:"-"`
+	releasesInterval    time.Duration   `yaml:"-"`
+	enabledReleaseTypes map[string]bool `yaml:"-"`
 
 	releaseCacheMu sync.Mutex                           `yaml:"-"`
 	releaseCache   map[string]calendarReleaseCacheEntry `yaml:"-"`
@@ -83,6 +116,18 @@ func (widget *calendarWidget) initialize() error {
 	}
 
 	widget.FirstDay = int(calendarWeekdaysToInt[widget.FirstDayOfWeek])
+
+	widget.enabledReleaseTypes = map[string]bool{}
+	if len(widget.ReleaseTypes) == 0 {
+		widget.enabledReleaseTypes = map[string]bool{"cinema": true, "physical": true, "digital": true, "episode": true}
+	} else {
+		for _, t := range widget.ReleaseTypes {
+			switch normalized := strings.ToLower(strings.TrimSpace(t)); normalized {
+			case "cinema", "physical", "digital", "episode":
+				widget.enabledReleaseTypes[normalized] = true
+			}
+		}
+	}
 
 	widget.releasesInterval = calendarDefaultReleasesInterval
 	if widget.UpdateInterval != nil {

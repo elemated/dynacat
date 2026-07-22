@@ -822,6 +822,7 @@ Preview:
 | ---- | ---- | -------- | ------- |
 | first-day-of-week | string | no | monday |
 | hosts | array | no | |
+| release-types | list of strings | no | cinema, physical, digital, episode |
 | update-interval | string | no | 15m |
 
 ##### `first-day-of-week`
@@ -872,6 +873,36 @@ Optionally override the URL used for the release links in the popover. Useful wh
 `allow-insecure`
 
 Whether to allow invalid/self-signed certificates when making requests to the instance.
+
+##### `release-types`
+Which kinds of release to show. Each release is shown as its own entry on the day it lands, with a small icon next to the title indicating the type:
+
+- `cinema` - Radarr, in cinemas (film icon)
+- `physical` - Radarr, physical/disc release (minidisc icon)
+- `digital` - Radarr, digital/home release (monitor icon)
+- `episode` - Sonarr episodes (television icon)
+
+A **Radarr** movie can have a cinema, a physical and a digital release date, so it may appear on up to three days. This option controls both Radarr and Sonarr - for example dropping `episode` hides Sonarr episodes entirely.
+
+By default all types are shown. Restrict it by listing only the ones you want. 
+
+```yaml
+- type: calendar
+  release-types:
+    - cinema
+    - digital
+  hosts:
+    - url: radarr:https://radarr.domain.com
+      token: ${RADARR_KEY}
+```
+
+```yaml
+- type: calendar
+  release-types: digital
+  hosts:
+    - url: radarr:https://radarr.domain.com
+      token: ${RADARR_KEY}
+```
 
 ##### `update-interval`
 How often the calendar polls for release updates without reloading the page. The value is a string and must be a number followed by one of s (seconds), m (minutes) or h (hours). Only relevant when `hosts` is configured. Default is `15m`.

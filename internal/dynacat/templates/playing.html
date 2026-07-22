@@ -43,16 +43,14 @@
         flex-shrink: 0;
         width: 80px;
         height: 80px;
-        border-radius: 0.25rem;
+        border-radius: 0.3rem;
         overflow: hidden;
         background: var(--color-separator);
         display: inline-block;
     }
 
     .playing-thumbnail.playing-portrait {
-        /* make portrait-oriented covers taller and remove bg color */
         height: 120px;
-        background: transparent;
     }
 
     .playing-thumbnail-img {
@@ -260,7 +258,7 @@
                             {{ if $.ShowThumbnailEnabled }}
                                 {{ if $session.ThumbnailURL }}
                                     <div class="playing-thumbnail">
-                                        <img class="playing-thumbnail-img" src="{{ $session.ThumbnailURL }}" alt="Thumbnail">
+                                        <img class="playing-thumbnail-img" src="{{ $session.ThumbnailURL }}" alt="Thumbnail" loading="lazy">
                                     </div>
                                 {{ else }}
                                     <div class="playing-thumbnail"></div>
@@ -324,7 +322,7 @@
             {{ if $.ShowThumbnailEnabled }}
                 {{ if $session.ThumbnailURL }}
                     <div class="playing-thumbnail">
-                        <img class="playing-thumbnail-img" src="{{ $session.ThumbnailURL }}" alt="Thumbnail">
+                        <img class="playing-thumbnail-img" src="{{ $session.ThumbnailURL }}" alt="Thumbnail" loading="lazy">
                     </div>
                 {{ else }}
                     <div class="playing-thumbnail"></div>

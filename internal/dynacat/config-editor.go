@@ -234,9 +234,21 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 		if pages == nil || !validIndex(pages.Content, m.Page) {
 			return fmt.Errorf("page %d out of range", m.Page)
 		}
-		// Drops the page (or its $include line) from the main file; included files stay on disk.
+		// Capture the included file (if any) before dropping the node so it can be
+		// removed from disk once the main file is rewritten without it.
+		includeFile := includeTarget(pages.Content[m.Page])
 		pages.Content = removeNode(pages.Content, m.Page)
-		return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
+		if err := a.writeConfigCandidate(mainPath, marshalDocument(mainDoc)); err != nil {
+			return err
+		}
+		if includeFile != "" {
+			includePath := includeFile
+			if !filepath.IsAbs(includePath) {
+				includePath = filepath.Join(filepath.Dir(mainPath), includeFile)
+			}
+			os.Remove(includePath)
+		}
+		return nil
 	}
 
 	path, doc, pageNode, err := resolvePageNode(mainDoc, mainPath, m.Page)

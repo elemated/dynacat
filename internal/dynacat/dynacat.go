@@ -262,6 +262,8 @@ func newApplication(c *config) (*application, error) {
 		app:                  app,
 	}
 
+	usedSlugs := make(map[string]struct{}, len(config.Pages))
+
 	for p := range config.Pages {
 		page := &config.Pages[p]
 		page.PrimaryColumnIndex = -1
@@ -275,6 +277,17 @@ func newApplication(c *config) (*application, error) {
 		if slices.Contains(reservedPageSlugs, page.Slug) {
 			return nil, fmt.Errorf("page slug \"%s\" is reserved", page.Slug)
 		}
+
+		// Ensure slugs stay unique so duplicate page names don't collide in
+		// routing or the UI editor. Append -2, -3, ... on collision.
+		baseSlug := page.Slug
+		for i := 2; ; i++ {
+			if _, taken := usedSlugs[page.Slug]; !taken {
+				break
+			}
+			page.Slug = fmt.Sprintf("%s-%d", baseSlug, i)
+		}
+		usedSlugs[page.Slug] = struct{}{}
 
 		app.slugToPage[page.Slug] = page
 
