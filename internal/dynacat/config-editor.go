@@ -21,7 +21,10 @@ import (
 // to the file that actually owns the page.
 
 type editorConfigView struct {
-	Pages []editorPageView `json:"pages"`
+	Pages        []editorPageView  `json:"pages"`
+	Theme        map[string]string `json:"theme"`
+	Branding     map[string]string `json:"branding"`
+	MainWritable bool              `json:"mainWritable"`
 }
 
 type editorPageView struct {
@@ -58,6 +61,8 @@ type editorMutation struct {
 	RawFields  map[string]string `json:"rawFields"` // yaml-kind inputs, parsed as YAML
 	Title      string            `json:"title"`     // addPage
 	Layout     []string          `json:"layout"`    // addPage column sizes
+	Theme      map[string]any    `json:"theme"`     // editStyling: theme section fields
+	Branding   map[string]any    `json:"branding"`  // editStyling: branding section fields
 }
 
 type editorPermissionError struct{ path string }
@@ -105,7 +110,29 @@ func (a *application) buildEditorConfigView() (editorConfigView, error) {
 		view.Pages = append(view.Pages, pv)
 	}
 
+	// Theme and branding live in the main config file's top-level mapping.
+	root := documentRoot(mainDoc)
+	view.Theme = sectionToStringMap(root, "theme")
+	view.Branding = sectionToStringMap(root, "branding")
+	view.MainWritable = pathWritable(mainPath)
+
 	return view, nil
+}
+
+// sectionToStringMap reads the scalar children of a top-level mapping (e.g. theme
+// or branding) into a flat map. Nested mappings such as theme presets are skipped.
+func sectionToStringMap(root *yaml.Node, key string) map[string]string {
+	out := map[string]string{}
+	section := getMappingValue(root, key)
+	if section == nil || section.Kind != yaml.MappingNode {
+		return out
+	}
+	for i := 0; i+1 < len(section.Content); i += 2 {
+		if v := section.Content[i+1]; v.Kind == yaml.ScalarNode {
+			out[section.Content[i].Value] = v.Value
+		}
+	}
+	return out
 }
 
 func pageNodeToView(pageNode *yaml.Node, path string) editorPageView {
@@ -172,6 +199,13 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 		if err := mutateAddPage(documentRoot(mainDoc), m); err != nil {
 			return err
 		}
+		return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
+	}
+
+	if m.Op == "editStyling" {
+		root := documentRoot(mainDoc)
+		applyStylingSection(root, "theme", m.Theme)
+		applyStylingSection(root, "branding", m.Branding)
 		return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
 	}
 
@@ -508,6 +542,31 @@ func applyFieldsToNode(node *yaml.Node, fields map[string]any, rawFields map[str
 	}
 
 	return nil
+}
+
+// applyStylingSection upserts the scalar fields of a top-level section (theme or
+// branding), creating it if needed. A field that is empty, false or zero drops the
+// key so the YAML stays close to the defaults. An emptied section is removed.
+func applyStylingSection(root *yaml.Node, key string, fields map[string]any) {
+	if fields == nil {
+		return
+	}
+	section := getMappingValue(root, key)
+	if section == nil {
+		section = newMappingNode()
+		setMappingKey(root, key, section)
+	}
+	for _, k := range sortedKeys(fields) {
+		v := fields[k]
+		if isEmptyValue(v) || v == false || v == float64(0) {
+			removeMappingKey(section, k)
+			continue
+		}
+		setMappingKey(section, k, valueNode(v))
+	}
+	if len(section.Content) == 0 {
+		removeMappingKey(root, key)
+	}
 }
 
 func parseYAMLValue(text string) (*yaml.Node, error) {

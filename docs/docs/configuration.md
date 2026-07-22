@@ -3332,6 +3332,7 @@ Preview:
 | show-progress-bar | boolean | no | true |
 | show-progress-info | boolean | no | true |
 | group-by-host | boolean | no | false |
+| hide-username | boolean | no | false |
 | update-interval | string | no | 30s |
 | episode-title-format | string | no | series |
 
@@ -3401,6 +3402,9 @@ Example:
 
 ##### `group-by-host`
 When `true`, groups sessions by their media server. When `false`, displays all sessions in a unified list.
+
+##### `hide-username`
+When `true`, hides the user row for each session - both the username and the play-state indicator (or `[playing]`/`[paused]` text).
 
 #### API Access & Tokens
 

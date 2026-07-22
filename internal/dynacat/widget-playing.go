@@ -73,6 +73,9 @@ type navidromeNowPlayingResponse struct {
 				Duration   int64  `json:"duration"`
 				MinutesAgo int    `json:"minutesAgo"`
 				CoverArt   string `json:"coverArt"`
+				// openSubsonic extensions (Navidrome) - exact playback state.
+				State      string `json:"state"`
+				PositionMs *int64 `json:"positionMs"`
 			} `json:"entry"`
 		} `json:"nowPlaying"`
 		Error *struct {
@@ -94,6 +97,7 @@ type playingWidget struct {
 	ShowProgressBar         *bool  `yaml:"show-progress-bar"`
 	ShowProgressInfo        *bool  `yaml:"show-progress-info"`
 	GroupByHost             bool   `yaml:"group-by-host"`
+	HideUsername            bool   `yaml:"hide-username"`
 	EpisodeTitleFormat      string `yaml:"episode-title-format"`
 	Debug                   bool   `yaml:"debug"`
 	ShowThumbnailEnabled    bool   `yaml:"-"`
@@ -120,6 +124,7 @@ type mediaSession struct {
 	UserName           string
 	IsPlaying          bool
 	State              string
+	Coarse             bool
 	MediaType          string
 	Title              string
 	ShowTitle          string
@@ -396,14 +401,44 @@ func (widget *playingWidget) fetchNavidromeSessions(ctx context.Context, host *P
 	var sessions []mediaSession
 	for _, item := range response.SubsonicResponse.NowPlaying.Entry {
 		durationMs := item.Duration * 1000
+
+		// Prefer the openSubsonic `positionMs` (exact, sub-second) that
+		// Navidrome reports. Fall back to `minutesAgo` (minute-granular time
+		// since the client last pinged now-playing) only for older servers,
+		// marking it coarse so the client avoids snapping the bar backward.
 		offsetMs := int64(item.MinutesAgo) * int64(time.Minute/time.Millisecond)
+		coarse := true
+		if item.PositionMs != nil {
+			offsetMs = *item.PositionMs
+			coarse = false
+		}
+
+		// openSubsonic `state` distinguishes playing/paused; older servers
+		// only ever list actively-playing tracks.
+		state := "playing"
+		isPlaying := true
+		if item.State != "" {
+			state = item.State
+			isPlaying = item.State == "playing"
+		}
+		if !isPlaying && !widget.ShowPaused {
+			continue
+		}
+
+		// Navidrome keeps entries in now-playing for a while after a track
+		// ends. Once the offset passes the duration the song is finished -
+		// drop it instead of showing a ghost 100% bar.
+		if durationMs > 0 && offsetMs >= durationMs {
+			continue
+		}
 
 		session := mediaSession{
 			ServerType: "navidrome",
 			ServerURL:  host.BaseURL,
 			UserName:   item.Username,
-			IsPlaying:  true,
-			State:      "playing",
+			IsPlaying:  isPlaying,
+			State:      state,
+			Coarse:     coarse,
 			MediaType:  "track",
 			Title:      item.Title,
 			Artist:     item.Artist,

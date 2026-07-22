@@ -46,6 +46,7 @@ async function enterEditor() {
 
     buildPalette();
     buildAddPageButton();
+    setupStylingTrigger();
 
     // page.js injects content only once the cache finishes building (marking #page
     // content-ready), and may rebuild it. Wait for ready, then guard against rebuilds.
@@ -410,6 +411,26 @@ function buildAddPageButton() {
     const remove = div("editor-ui editor-remove-page nav-item", "Remove page");
     remove.addEventListener("click", removeCurrentPage);
     nav.append(remove);
+
+    const styling = div("editor-ui editor-styling-btn nav-item", "Styling");
+    styling.title = "Edit theme colors and branding";
+    styling.addEventListener("click", openStylingModal);
+    nav.append(styling);
+}
+
+// In edit mode, clicking the theme picker opens the styling editor instead of
+// switching the active preset. The explicit "Styling" nav button is the fallback
+// (and the only entry point when the theme picker is disabled).
+function setupStylingTrigger() {
+    const picker = document.querySelector(".header .theme-picker");
+    if (!picker) return;
+    picker.classList.add("editor-styling-trigger");
+    picker.addEventListener("click", (e) => {
+        if (!state.active) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openStylingModal();
+    }, true);
 }
 
 function removeCurrentPage() {
@@ -641,6 +662,320 @@ function resolveIconURL(value) {
         case "sh": return `https://cdn.jsdelivr.net/gh/selfhst/icons/svg/${base}.svg`;
         default: return value;
     }
+}
+
+//
+// Styling modal: theme colors and branding, written to the top-level
+// theme:/branding: sections of the main config file.
+//
+
+function openStylingModal() {
+    if (state.config && state.config.mainWritable === false) {
+        toast("The main config file is read only, styling cannot be saved", "negative");
+        return;
+    }
+    const theme = (state.config && state.config.theme) || {};
+    const branding = (state.config && state.config.branding) || {};
+    const controls = [];
+
+    // section = "theme" | "branding", key = yaml key. reg wires read() for save.
+    const reg = (section, key, ctl) => {
+        controls.push({ section, key, read: ctl.read });
+        return ctl.wrapper;
+    };
+
+    // Colors serialize to the yaml HSL triple ("43 50 70"). When a color is not set
+    // in the config it falls back to the effective value resolved from the live CSS
+    // variables, so the pickers show the colors currently on screen.
+    const eff = {
+        "background-color": resolveCssColor("--color-background"),
+        "primary-color": resolveCssColor("--color-primary"),
+        "positive-color": resolveCssColor("--color-positive"),
+        "negative-color": resolveCssColor("--color-negative"),
+    };
+    const colors = div("editor-fields");
+    colors.append(reg("theme", "background-color", colorField("Background", theme["background-color"], eff["background-color"], "hsl")));
+    colors.append(reg("theme", "primary-color", colorField("Primary", theme["primary-color"], eff["primary-color"], "hsl")));
+    colors.append(reg("theme", "positive-color", colorField("Positive", theme["positive-color"], eff["positive-color"], "hsl")));
+    colors.append(reg("theme", "negative-color", colorField("Negative", theme["negative-color"], eff["negative-color"], "hsl")));
+
+    const options = div("editor-fields");
+    options.append(reg("theme", "light", checkField("Light scheme", theme["light"])));
+    options.append(reg("theme", "contrast-multiplier", numField("Contrast multiplier", theme["contrast-multiplier"], "e.g. 1.1")));
+    options.append(reg("theme", "text-saturation-multiplier", numField("Text saturation multiplier", theme["text-saturation-multiplier"], "e.g. 1")));
+
+    // Logo: logo-url overwrites the logo. The sync toggle mirrors it to the favicon.
+    const logo = div("editor-fields");
+    const logoURL = textField("Logo URL (overwrites logo)", branding["logo-url"], "/assets/logo.png");
+    logo.append(reg("branding", "logo-url", logoURL));
+
+    const favSync = document.createElement("input");
+    favSync.type = "checkbox";
+    logo.append(checkRow("Also use this image as the favicon", favSync));
+
+    const faviconURL = textField("Favicon URL", branding["favicon-url"], "/assets/logo.png");
+    logo.append(reg("branding", "favicon-url", faviconURL));
+
+    const mirrorFavicon = () => {
+        if (favSync.checked) faviconURL.input.value = logoURL.input.value.trim();
+        faviconURL.input.disabled = favSync.checked;
+    };
+    if (branding["logo-url"] && branding["favicon-url"] === branding["logo-url"]) favSync.checked = true;
+    favSync.addEventListener("change", mirrorFavicon);
+    logoURL.input.addEventListener("input", mirrorFavicon);
+    mirrorFavicon();
+
+    logo.append(reg("branding", "logo-text", textField("Logo text", branding["logo-text"], "G")));
+    logo.append(reg("branding", "hide-logo", checkField("Hide logo", branding["hide-logo"])));
+
+    // App / PWA. app-background-color is a CSS color, kept as hex rather than HSL.
+    const app = div("editor-fields");
+    app.append(reg("branding", "app-name", textField("App name", branding["app-name"], "Dynacat")));
+    app.append(reg("branding", "app-icon-url", textField("App icon URL", branding["app-icon-url"], "/assets/app-icon.svg")));
+    app.append(reg("branding", "app-background-color", colorField("App background color", branding["app-background-color"], resolveCssColor("--color-background"), "hex")));
+
+    const misc = div("editor-fields");
+    misc.append(reg("branding", "hide-footer", checkField("Hide footer", branding["hide-footer"])));
+    misc.append(reg("branding", "custom-footer", areaField("Custom footer HTML", branding["custom-footer"])));
+    misc.append(reg("branding", "show-desktop-navigation-on-hover", checkField("Show desktop navigation on hover", branding["show-desktop-navigation-on-hover"])));
+    misc.append(reg("branding", "center-desktop-navigation", checkField("Center desktop navigation", branding["center-desktop-navigation"])));
+
+    const sections = [
+        sectionTitle("Colors"),
+        colors,
+        sectionTitle("Theme options"),
+        options,
+        collapsible("Logo & branding", logo),
+        collapsible("App / PWA", app),
+        collapsible("Footer & navigation", misc),
+    ];
+
+    openModal("Styling", sections, () => {
+        const themeOut = {};
+        const brandingOut = {};
+        for (const c of controls) (c.section === "theme" ? themeOut : brandingOut)[c.key] = c.read();
+        saveStyling(themeOut, brandingOut);
+    });
+}
+
+// saveStyling commits the styling change, then reloads once the server hot-reloads
+// so the new theme CSS and branding (rendered outside the editor canvas) take effect.
+// The editing flag stays set, so edit mode is re-entered after the reload.
+async function saveStyling(theme, branding) {
+    const before = await serverGeneration();
+    if (!(await commit({ op: "editStyling", theme, branding }))) return;
+    toast("Styling saved, reloading…", "positive");
+    await waitForServerReload(before);
+    location.reload();
+}
+
+function sectionTitle(text) {
+    return div("editor-section-title", text);
+}
+
+// colorField: native color picker + a text box accepting hex, rgb() or an HSL
+// triple. mode "hsl" reads back the yaml triple "H S L"; mode "hex" reads a hex string.
+// explicit is the value set in the config (undefined if unset); effective is the
+// current on-screen value used to prefill when unset. An unset color left untouched
+// reads back empty so the default is not written into the config.
+function colorField(label, explicit, effective, mode) {
+    const normalize = (v) => (mode === "hex" ? colorToHex(v) || String(v || "").trim() : normalizeHsl(v));
+
+    const wrapper = div("editor-field");
+    const l = document.createElement("label");
+    l.className = "editor-field-label";
+    l.textContent = label;
+    wrapper.append(l);
+
+    const row = div("editor-color-row");
+    const swatch = document.createElement("input");
+    swatch.type = "color";
+    swatch.className = "editor-color-swatch";
+    const text = inputEl("text");
+    text.classList.add("editor-color-text");
+    text.placeholder = mode === "hex" ? "#151519" : "43 50 70";
+
+    const shown = explicit || (mode === "hex" ? colorToHex(effective) : normalizeHsl(effective)) || "";
+    if (shown) text.value = shown;
+    swatch.value = colorToHex(shown) || "#000000";
+    const initial = normalize(shown);
+
+    swatch.addEventListener("input", () => {
+        text.value = mode === "hex" ? swatch.value : hexToHslString(swatch.value);
+    });
+    text.addEventListener("input", () => {
+        const hex = colorToHex(text.value);
+        if (hex) swatch.value = hex;
+    });
+
+    row.append(swatch, text);
+    wrapper.append(row);
+
+    return {
+        wrapper,
+        input: text,
+        read: () => {
+            const t = text.value.trim();
+            if (!t) return "";
+            const out = normalize(t);
+            // Unset color the user did not change: leave it out so the default stays default.
+            if (explicit === undefined && out === initial) return "";
+            return out;
+        },
+    };
+}
+
+// normalizeHsl coerces any accepted color input to the yaml "H S L" triple.
+function normalizeHsl(value) {
+    const t = String(value == null ? "" : value).trim();
+    if (!t) return "";
+    if (!/^#|^rgb/i.test(t)) {
+        const tr = parseHslTriple(t);
+        if (tr) return `${Math.round(tr.h)} ${Math.round(tr.s)} ${Math.round(tr.l)}`;
+    }
+    return colorToHslString(t) || t;
+}
+
+// resolveCssColor returns the current computed value of a CSS color variable as
+// an rgb() string (colorToHex/colorToHslString both parse it).
+function resolveCssColor(varName) {
+    const probe = document.createElement("span");
+    probe.style.cssText = `color: var(${varName}); display: none`;
+    document.body.appendChild(probe);
+    const rgb = getComputedStyle(probe).color;
+    probe.remove();
+    return rgb;
+}
+
+function checkField(label, value) {
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = value === true || value === "true";
+    return { wrapper: checkRow(label, input), input, read: () => input.checked };
+}
+
+function checkRow(label, input) {
+    const row = document.createElement("label");
+    row.className = "editor-field editor-check";
+    const text = document.createElement("span");
+    text.className = "editor-check-label";
+    text.textContent = label;
+    row.append(input, text);
+    return row;
+}
+
+function textField(label, value, placeholder) {
+    const input = inputEl("text");
+    if (value) input.value = value;
+    if (placeholder) input.placeholder = placeholder;
+    return { wrapper: labeled(label, input), input, read: () => input.value.trim() };
+}
+
+function numField(label, value, placeholder) {
+    const input = inputEl("number");
+    input.step = "any";
+    if (value) input.value = value;
+    if (placeholder) input.placeholder = placeholder;
+    return { wrapper: labeled(label, input), input, read: () => (input.value === "" ? "" : Number(input.value)) };
+}
+
+function areaField(label, value) {
+    const input = document.createElement("textarea");
+    input.className = "editor-input editor-textarea";
+    if (value) input.value = value;
+    return { wrapper: labeled(label, input), input, read: () => input.value.trim() };
+}
+
+//
+// Color conversions (hex <-> rgb <-> hsl). HSL uses the same "H S L" triple the
+// yaml theme config expects.
+//
+
+function colorToHex(value) {
+    const str = String(value == null ? "" : value).trim();
+    if (!str) return "";
+
+    let m = str.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    if (m) {
+        let h = m[1];
+        if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+        return "#" + h.toLowerCase();
+    }
+
+    m = str.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i);
+    if (m) return rgbToHex(+m[1], +m[2], +m[3]);
+
+    const hsl = parseHslTriple(str);
+    if (hsl) return hslToHex(hsl.h, hsl.s, hsl.l);
+
+    return "";
+}
+
+function colorToHslString(value) {
+    const hex = colorToHex(value);
+    if (hex) return hexToHslString(hex);
+    const t = parseHslTriple(value);
+    return t ? `${Math.round(t.h)} ${Math.round(t.s)} ${Math.round(t.l)}` : "";
+}
+
+// parseHslTriple accepts "43 50 70", "43,50,70" and "hsl(43, 50%, 70%)".
+function parseHslTriple(value) {
+    const m = String(value == null ? "" : value).trim()
+        .match(/^(?:hsla?\()?\s*([\d.]+)[\s,]+([\d.]+)%?[\s,]+([\d.]+)%?\s*\)?$/);
+    if (!m) return null;
+    const h = +m[1], s = +m[2], l = +m[3];
+    if (h > 360 || s > 100 || l > 100) return null;
+    return { h, s, l };
+}
+
+function hexToRgb(hex) {
+    const h = hex.replace("#", "");
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+
+function rgbToHex(r, g, b) {
+    const to = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+    return "#" + to(r) + to(g) + to(b);
+}
+
+function hexToHslString(hex) {
+    const { r, g, b } = hexToRgb(hex);
+    const { h, s, l } = rgbToHsl(r, g, b);
+    return `${h} ${s} ${l}`;
+}
+
+function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (d !== 0) {
+        s = d / (1 - Math.abs(2 * l - 1));
+        switch (max) {
+            case r: h = ((g - b) / d) % 6; break;
+            case g: h = (b - r) / d + 2; break;
+            default: h = (r - g) / d + 4;
+        }
+        h *= 60;
+        if (h < 0) h += 360;
+    }
+    return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+
+function hslToHex(h, s, l) {
+    s /= 100; l /= 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const mm = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; }
+    else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; }
+    else { r = c; b = x; }
+    return rgbToHex((r + mm) * 255, (g + mm) * 255, (b + mm) * 255);
 }
 
 //

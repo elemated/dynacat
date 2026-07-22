@@ -2,6 +2,8 @@
 - Fixed an issue where subrequests were not detected properly in `dynawidgets`
 - Fixed `dynawidgets` protocol handling 
 - Added an option to visually edit your configuration
+- Fixed Navidrome in currently playing
+- Added an option to see bookmarks in search widget
 
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one
