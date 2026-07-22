@@ -45,6 +45,19 @@ type arrImage struct {
 	URL       string `json:"url"`
 }
 
+// calendarReleaseState classifies a release for the day-underline coloring:
+// "available" when it is already on disk, "released" when its date has passed but
+// it is not yet available, and "upcoming" when the date is still in the future.
+func calendarReleaseState(dateISO string, hasFile bool, todayISO string) string {
+	if hasFile {
+		return "available"
+	}
+	if dateISO <= todayISO {
+		return "released"
+	}
+	return "upcoming"
+}
+
 func arrPosterURL(images []arrImage) string {
 	for _, image := range images {
 		if image.CoverType == "poster" {
@@ -63,6 +76,7 @@ type sonarrCalendarEpisode struct {
 	SeasonNumber  int    `json:"seasonNumber"`
 	EpisodeNumber int    `json:"episodeNumber"`
 	Overview      string `json:"overview"`
+	HasFile       bool   `json:"hasFile"`
 	Series        struct {
 		Title     string     `json:"title"`
 		TitleSlug string     `json:"titleSlug"`
@@ -75,6 +89,7 @@ type radarrCalendarMovie struct {
 	Overview        string     `json:"overview"`
 	Status          string     `json:"status"`
 	TmdbID          int        `json:"tmdbId"`
+	HasFile         bool       `json:"hasFile"`
 	TitleSlug       string     `json:"titleSlug"`
 	InCinemas       string     `json:"inCinemas"`
 	DigitalRelease  string     `json:"digitalRelease"`
@@ -231,11 +246,21 @@ func fetchSonarrReleases(ctx context.Context, service *calendarReleaseService, s
 	}
 
 	result := make(map[string][]calendarReleaseItem)
+	todayISO := time.Now().UTC().Format(calendarReleaseDateLayout)
 
 	for date, keys := range order {
 		for _, key := range keys {
 			eps := groups[key]
 			first := eps[0]
+
+			// A grouped release counts as available only when every episode is on disk.
+			hasFile := true
+			for _, ep := range eps {
+				if !ep.HasFile {
+					hasFile = false
+					break
+				}
+			}
 
 			link := ""
 			if first.Series.TitleSlug != "" {
@@ -272,6 +297,7 @@ func fetchSonarrReleases(ctx context.Context, service *calendarReleaseService, s
 				Thumbnail:   arrPosterURL(first.Series.Images),
 				Link:        link,
 				Type:        "episode",
+				State:       calendarReleaseState(date, hasFile, todayISO),
 				dedupKey:    dedupKey,
 			})
 		}
@@ -295,6 +321,7 @@ func fetchRadarrReleases(ctx context.Context, service *calendarReleaseService, s
 
 	startISO := start.Format(calendarReleaseDateLayout)
 	endISO := end.Format(calendarReleaseDateLayout)
+	todayISO := time.Now().UTC().Format(calendarReleaseDateLayout)
 
 	result := make(map[string][]calendarReleaseItem)
 
@@ -331,6 +358,7 @@ func fetchRadarrReleases(ctx context.Context, service *calendarReleaseService, s
 				Thumbnail:   poster,
 				Link:        link,
 				Type:        candidate.releaseType,
+				State:       calendarReleaseState(date, movie.HasFile, todayISO),
 				dedupKey:    dedupBase + ":" + candidate.releaseType,
 			})
 		}

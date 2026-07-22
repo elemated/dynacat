@@ -21,10 +21,18 @@ import (
 // to the file that actually owns the page.
 
 type editorConfigView struct {
-	Pages        []editorPageView  `json:"pages"`
-	Theme        map[string]string `json:"theme"`
-	Branding     map[string]string `json:"branding"`
-	MainWritable bool              `json:"mainWritable"`
+	Pages        []editorPageView   `json:"pages"`
+	Theme        map[string]string  `json:"theme"`
+	Branding     map[string]string  `json:"branding"`
+	ThemePresets []editorPresetView `json:"themePresets"`
+	MainWritable bool               `json:"mainWritable"`
+}
+
+// editorPresetView is one named theme preset (theme.presets.<key>) exposed to the
+// styling editor so presets can be selected, overwritten and deleted.
+type editorPresetView struct {
+	Key    string            `json:"key"`
+	Values map[string]string `json:"values"`
 }
 
 type editorPageView struct {
@@ -64,6 +72,7 @@ type editorMutation struct {
 	Layout     []string          `json:"layout"`    // addPage column sizes
 	Theme      map[string]any    `json:"theme"`     // editStyling: theme section fields
 	Branding   map[string]any    `json:"branding"`  // editStyling: branding section fields
+	PresetKey  string            `json:"presetKey"` // editStyling target preset (empty = base theme); deleteThemePreset key
 }
 
 type editorPermissionError struct{ path string }
@@ -115,6 +124,7 @@ func (a *application) buildEditorConfigView() (editorConfigView, error) {
 	root := documentRoot(mainDoc)
 	view.Theme = sectionToStringMap(root, "theme")
 	view.Branding = sectionToStringMap(root, "branding")
+	view.ThemePresets = presetsToViews(root)
 	view.MainWritable = pathWritable(mainPath)
 
 	return view, nil
@@ -132,6 +142,34 @@ func sectionToStringMap(root *yaml.Node, key string) map[string]string {
 		if v := section.Content[i+1]; v.Kind == yaml.ScalarNode {
 			out[section.Content[i].Value] = v.Value
 		}
+	}
+	return out
+}
+
+// presetsToViews reads the scalar fields of every theme.presets.<key> mapping,
+// preserving source order, so the editor can list and prefill them.
+func presetsToViews(root *yaml.Node) []editorPresetView {
+	out := []editorPresetView{}
+	theme := getMappingValue(root, "theme")
+	if theme == nil {
+		return out
+	}
+	presets := getMappingValue(theme, "presets")
+	if presets == nil || presets.Kind != yaml.MappingNode {
+		return out
+	}
+	for i := 0; i+1 < len(presets.Content); i += 2 {
+		keyNode, valNode := presets.Content[i], presets.Content[i+1]
+		if valNode.Kind != yaml.MappingNode {
+			continue
+		}
+		vals := map[string]string{}
+		for j := 0; j+1 < len(valNode.Content); j += 2 {
+			if s := valNode.Content[j+1]; s.Kind == yaml.ScalarNode {
+				vals[valNode.Content[j].Value] = s.Value
+			}
+		}
+		out = append(out, editorPresetView{Key: keyNode.Value, Values: vals})
 	}
 	return out
 }
@@ -214,8 +252,24 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 
 	if m.Op == "editStyling" {
 		root := documentRoot(mainDoc)
-		applyStylingSection(root, "theme", m.Theme)
-		applyStylingSection(root, "branding", m.Branding)
+		if m.PresetKey != "" {
+			applyThemePreset(root, m.PresetKey, m.Theme)
+		} else {
+			applyStylingSection(root, "theme", m.Theme)
+			applyStylingSection(root, "branding", m.Branding)
+		}
+		return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
+	}
+
+	if m.Op == "deleteThemePreset" {
+		root := documentRoot(mainDoc)
+		if m.PresetKey == "" {
+			// Empty key means the base ("Default") theme: reset it to the built-in
+			// default by dropping its scalar fields, keeping any presets intact.
+			resetBaseTheme(root)
+		} else {
+			removeThemePreset(root, m.PresetKey)
+		}
 		return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
 	}
 
@@ -733,6 +787,74 @@ func applyStylingSection(root *yaml.Node, key string, fields map[string]any) {
 	}
 	if len(section.Content) == 0 {
 		removeMappingKey(root, key)
+	}
+}
+
+// applyThemePreset upserts the scalar fields of a single theme.presets.<key>
+// mapping, creating the theme, presets and preset nodes as needed. Empty/false/zero
+// fields drop their key; the preset mapping itself is kept even when emptied so a
+// user-created preset does not silently vanish.
+func applyThemePreset(root *yaml.Node, key string, fields map[string]any) {
+	theme := getMappingValue(root, "theme")
+	if theme == nil {
+		theme = newMappingNode()
+		setMappingKey(root, "theme", theme)
+	}
+	presets := getMappingValue(theme, "presets")
+	if presets == nil {
+		presets = newMappingNode()
+		setMappingKey(theme, "presets", presets)
+	}
+	preset := getMappingValue(presets, key)
+	if preset == nil {
+		preset = newMappingNode()
+		setMappingKey(presets, key, preset)
+	}
+	for _, k := range sortedKeys(fields) {
+		v := fields[k]
+		if isEmptyValue(v) || v == false || v == float64(0) {
+			removeMappingKey(preset, k)
+			continue
+		}
+		setMappingKey(preset, k, valueNode(v))
+	}
+}
+
+// removeThemePreset deletes theme.presets.<key>, dropping the presets mapping when
+// it becomes empty.
+func removeThemePreset(root *yaml.Node, key string) {
+	theme := getMappingValue(root, "theme")
+	if theme == nil {
+		return
+	}
+	presets := getMappingValue(theme, "presets")
+	if presets == nil {
+		return
+	}
+	removeMappingKey(presets, key)
+	if len(presets.Content) == 0 {
+		removeMappingKey(theme, "presets")
+	}
+}
+
+// resetBaseTheme drops the scalar fields of the top-level theme mapping (the base
+// theme), reverting it to the built-in default, while preserving nested mappings such
+// as theme.presets. The theme mapping is removed if nothing is left.
+func resetBaseTheme(root *yaml.Node) {
+	theme := getMappingValue(root, "theme")
+	if theme == nil {
+		return
+	}
+	kept := theme.Content[:0:0]
+	for i := 0; i+1 < len(theme.Content); i += 2 {
+		if theme.Content[i+1].Kind == yaml.ScalarNode {
+			continue
+		}
+		kept = append(kept, theme.Content[i], theme.Content[i+1])
+	}
+	theme.Content = kept
+	if len(theme.Content) == 0 {
+		removeMappingKey(root, "theme")
 	}
 }
 

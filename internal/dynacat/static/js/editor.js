@@ -735,102 +735,245 @@ function resolveIconURL(value) {
 // theme:/branding: sections of the main config file.
 //
 
+// The styling modal edits either the base theme (the "Default" entry, which also
+// carries branding) or a named preset from theme.presets. A selector at the top
+// switches which theme is edited; the body is rebuilt for the chosen theme. Save
+// overwrites the selected theme, "Save as new" writes a new preset, and Delete
+// removes the selected preset.
 function openStylingModal() {
     if (state.config && state.config.mainWritable === false) {
         toast("The main config file is read only, styling cannot be saved", "negative");
         return;
     }
-    const theme = (state.config && state.config.theme) || {};
     const branding = (state.config && state.config.branding) || {};
-    const controls = [];
+    const presets = (state.config && state.config.themePresets) || [];
+    // selectedKey: "" => base theme (Default), otherwise a preset key.
+    let selectedKey = "";
+    let controls = [];
 
-    // section = "theme" | "branding", key = yaml key. reg wires read() for save.
-    const reg = (section, key, ctl) => {
-        controls.push({ section, key, read: ctl.read });
-        return ctl.wrapper;
+    const overlay = div("editor-ui editor-modal-overlay");
+    const modal = div("editor-modal");
+
+    // Theme picker: swatch buttons like the header theme picker, one for the base
+    // theme ("Default") plus every preset. Selecting one edits it below.
+    const themeEntries = [{ key: "", values: (state.config && state.config.theme) || {} }, ...presets.map((p) => ({ key: p.key, values: p.values || {} }))];
+    const picker = div("editor-theme-picker");
+    const choices = div("theme-choices");
+    const swatchButtons = [];
+    for (const entry of themeEntries) {
+        const btn = themeSwatch(entry.values);
+        btn.title = entry.key === "" ? "Default" : entry.key;
+        btn.addEventListener("click", () => {
+            selectedKey = entry.key;
+            highlightCurrent();
+            renderBody(selectedKey);
+            syncActions();
+        });
+        swatchButtons.push({ key: entry.key, btn });
+        choices.append(btn);
+    }
+    const highlightCurrent = () => {
+        for (const s of swatchButtons) s.btn.classList.toggle("current", s.key === selectedKey);
     };
+    picker.append(choices);
+    modal.append(picker);
 
-    // Colors serialize to the yaml HSL triple ("43 50 70"). When a color is not set
-    // in the config it falls back to the effective value resolved from the live CSS
-    // variables, so the pickers show the colors currently on screen.
-    const eff = {
-        "background-color": resolveCssColor("--color-background"),
-        "primary-color": resolveCssColor("--color-primary"),
-        "positive-color": resolveCssColor("--color-positive"),
-        "negative-color": resolveCssColor("--color-negative"),
-    };
-    const colors = div("editor-fields");
-    colors.append(reg("theme", "background-color", colorField("Background", theme["background-color"], eff["background-color"], "hsl")));
-    colors.append(reg("theme", "primary-color", colorField("Primary", theme["primary-color"], eff["primary-color"], "hsl")));
-    colors.append(reg("theme", "positive-color", colorField("Positive", theme["positive-color"], eff["positive-color"], "hsl")));
-    colors.append(reg("theme", "negative-color", colorField("Negative", theme["negative-color"], eff["negative-color"], "hsl")));
+    const bodyEl = div("editor-modal-body");
+    modal.append(bodyEl);
 
-    const options = div("editor-fields");
-    options.append(reg("theme", "light", checkField("Light scheme", theme["light"])));
-    options.append(reg("theme", "contrast-multiplier", numField("Contrast multiplier", theme["contrast-multiplier"], "e.g. 1.1")));
-    options.append(reg("theme", "text-saturation-multiplier", numField("Text saturation multiplier", theme["text-saturation-multiplier"], "e.g. 1")));
+    // themeValuesFor returns the stored fields of the theme currently selected.
+    const themeValuesFor = (key) =>
+        key === "" ? (state.config && state.config.theme) || {} : (presets.find((p) => p.key === key) || {}).values || {};
 
-    // Logo: logo-url overwrites the logo. The sync toggle mirrors it to the favicon.
-    const logo = div("editor-fields");
-    const logoURL = textField("Logo URL (overwrites logo)", branding["logo-url"], "/assets/logo.png");
-    logo.append(reg("branding", "logo-url", logoURL));
+    // renderBody builds the fields for the selected theme. Branding fields only
+    // apply to the base theme, so presets show colors and theme options only.
+    function renderBody(key) {
+        bodyEl.innerHTML = "";
+        controls = [];
+        const isDefault = key === "";
+        const theme = themeValuesFor(key);
 
-    const favSync = document.createElement("input");
-    favSync.type = "checkbox";
-    logo.append(checkRow("Also use this image as the favicon", favSync));
+        // reg wires a control's read() for save. section = "theme" | "branding".
+        const reg = (section, k, ctl) => {
+            controls.push({ section, key: k, read: ctl.read });
+            return ctl.wrapper;
+        };
 
-    const faviconURL = textField("Favicon URL", branding["favicon-url"], "/assets/logo.png");
-    logo.append(reg("branding", "favicon-url", faviconURL));
+        // For the base theme an unset color falls back to the live CSS variable so the
+        // pickers show what is on screen. For presets there is no meaningful live value,
+        // so unset colors stay empty and are not written into the preset.
+        const eff = isDefault
+            ? {
+                  "background-color": resolveCssColor("--color-background"),
+                  "primary-color": resolveCssColor("--color-primary"),
+                  "positive-color": resolveCssColor("--color-positive"),
+                  "negative-color": resolveCssColor("--color-negative"),
+              }
+            : {};
 
-    const mirrorFavicon = () => {
-        if (favSync.checked) faviconURL.input.value = logoURL.input.value.trim();
-        faviconURL.input.disabled = favSync.checked;
-    };
-    if (branding["logo-url"] && branding["favicon-url"] === branding["logo-url"]) favSync.checked = true;
-    favSync.addEventListener("change", mirrorFavicon);
-    logoURL.input.addEventListener("input", mirrorFavicon);
-    mirrorFavicon();
+        const colors = div("editor-fields");
+        colors.append(reg("theme", "background-color", colorField("Background", theme["background-color"], eff["background-color"], "hsl")));
+        colors.append(reg("theme", "primary-color", colorField("Primary", theme["primary-color"], eff["primary-color"], "hsl")));
+        colors.append(reg("theme", "positive-color", colorField("Positive", theme["positive-color"], eff["positive-color"], "hsl")));
+        colors.append(reg("theme", "negative-color", colorField("Negative", theme["negative-color"], eff["negative-color"], "hsl")));
 
-    logo.append(reg("branding", "logo-text", textField("Logo text", branding["logo-text"], "G")));
-    logo.append(reg("branding", "hide-logo", checkField("Hide logo", branding["hide-logo"])));
+        const options = div("editor-fields");
+        options.append(reg("theme", "light", checkField("Light scheme", theme["light"])));
+        options.append(reg("theme", "contrast-multiplier", numField("Contrast multiplier", theme["contrast-multiplier"], "e.g. 1.1")));
+        options.append(reg("theme", "text-saturation-multiplier", numField("Text saturation multiplier", theme["text-saturation-multiplier"], "e.g. 1")));
 
-    // App / PWA. app-background-color is a CSS color, kept as hex rather than HSL.
-    const app = div("editor-fields");
-    app.append(reg("branding", "app-name", textField("App name", branding["app-name"], "Dynacat")));
-    app.append(reg("branding", "app-icon-url", textField("App icon URL", branding["app-icon-url"], "/assets/app-icon.svg")));
-    app.append(reg("branding", "app-background-color", colorField("App background color", branding["app-background-color"], resolveCssColor("--color-background"), "hex")));
+        bodyEl.append(sectionTitle("Colors"), colors, sectionTitle("Theme options"), options);
 
-    const misc = div("editor-fields");
-    misc.append(reg("branding", "hide-footer", checkField("Hide footer", branding["hide-footer"])));
-    misc.append(reg("branding", "custom-footer", areaField("Custom footer HTML", branding["custom-footer"])));
-    misc.append(reg("branding", "show-desktop-navigation-on-hover", checkField("Show desktop navigation on hover", branding["show-desktop-navigation-on-hover"])));
-    misc.append(reg("branding", "center-desktop-navigation", checkField("Center desktop navigation", branding["center-desktop-navigation"])));
+        if (!isDefault) return;
 
-    const sections = [
-        sectionTitle("Colors"),
-        colors,
-        sectionTitle("Theme options"),
-        options,
-        collapsible("Logo & branding", logo),
-        collapsible("App / PWA", app),
-        collapsible("Footer & navigation", misc),
-    ];
+        // Logo: logo-url overwrites the logo. The sync toggle mirrors it to the favicon.
+        const logo = div("editor-fields");
+        const logoURL = textField("Logo URL (overwrites logo)", branding["logo-url"], "/assets/logo.png");
+        logo.append(reg("branding", "logo-url", logoURL));
 
-    openModal("Styling", sections, () => {
+        const favSync = document.createElement("input");
+        favSync.type = "checkbox";
+        logo.append(checkRow("Also use this image as the favicon", favSync));
+
+        const faviconURL = textField("Favicon URL", branding["favicon-url"], "/assets/logo.png");
+        logo.append(reg("branding", "favicon-url", faviconURL));
+
+        const mirrorFavicon = () => {
+            if (favSync.checked) faviconURL.input.value = logoURL.input.value.trim();
+            faviconURL.input.disabled = favSync.checked;
+        };
+        if (branding["logo-url"] && branding["favicon-url"] === branding["logo-url"]) favSync.checked = true;
+        favSync.addEventListener("change", mirrorFavicon);
+        logoURL.input.addEventListener("input", mirrorFavicon);
+        mirrorFavicon();
+
+        logo.append(reg("branding", "logo-text", textField("Logo text", branding["logo-text"], "G")));
+        logo.append(reg("branding", "hide-logo", checkField("Hide logo", branding["hide-logo"])));
+
+        // App / PWA. app-background-color is a CSS color, kept as hex rather than HSL.
+        const app = div("editor-fields");
+        app.append(reg("branding", "app-name", textField("App name", branding["app-name"], "Dynacat")));
+        app.append(reg("branding", "app-icon-url", textField("App icon URL", branding["app-icon-url"], "/assets/app-icon.svg")));
+        app.append(reg("branding", "app-background-color", colorField("App background color", branding["app-background-color"], resolveCssColor("--color-background"), "hex")));
+
+        const misc = div("editor-fields");
+        misc.append(reg("branding", "hide-footer", checkField("Hide footer", branding["hide-footer"])));
+        misc.append(reg("branding", "custom-footer", areaField("Custom footer HTML", branding["custom-footer"])));
+        misc.append(reg("branding", "show-desktop-navigation-on-hover", checkField("Show desktop navigation on hover", branding["show-desktop-navigation-on-hover"])));
+        misc.append(reg("branding", "center-desktop-navigation", checkField("Center desktop navigation", branding["center-desktop-navigation"])));
+
+        bodyEl.append(collapsible("Logo & branding", logo), collapsible("App / PWA", app), collapsible("Footer & navigation", misc));
+    }
+
+    // collect returns the current theme/branding field values from the live controls.
+    const collect = () => {
         const themeOut = {};
         const brandingOut = {};
         for (const c of controls) (c.section === "theme" ? themeOut : brandingOut)[c.key] = c.read();
-        saveStyling(themeOut, brandingOut);
+        return { themeOut, brandingOut };
+    };
+
+    // Actions: Cancel | Delete (presets only) | Save as new | Save.
+    const actions = div("editor-modal-actions");
+    const cancel = button("Cancel", "editor-btn");
+    const deleteBtn = button("", "editor-btn editor-btn-icon-danger");
+    deleteBtn.append(iconSpan(iconTrash));
+    deleteBtn.title = "Delete theme";
+    const saveAsNew = button("Save as new", "editor-btn");
+    const saveBtn = button("Save", "editor-btn editor-btn-primary");
+
+    cancel.addEventListener("click", () => overlay.remove());
+
+    saveBtn.addEventListener("click", () => {
+        const { themeOut, brandingOut } = collect();
+        overlay.remove();
+        if (selectedKey === "") saveStyling(themeOut, brandingOut);
+        else savePreset(selectedKey, themeOut);
     });
+
+    saveAsNew.addEventListener("click", () => {
+        promptModal("Name for the new theme", "Theme name", (name) => {
+            if (presets.some((p) => p.key === name)) {
+                toast(`A theme named "${name}" already exists`, "negative");
+                return false;
+            }
+            const { themeOut } = collect();
+            overlay.remove();
+            savePreset(name, themeOut);
+            return true;
+        });
+    });
+
+    deleteBtn.addEventListener("click", () => {
+        const key = selectedKey;
+        // The base theme has a built-in fallback, so deleting it resets to the default.
+        const message = key === "" ? "Reset the default theme to the built-in default?" : `Delete the theme "${key}"?`;
+        confirmAction(message, () => {
+            overlay.remove();
+            deletePreset(key);
+        });
+    });
+
+    // Delete is always available: presets are removed, the base theme is reset.
+    const syncActions = () => {};
+
+    actions.append(deleteBtn, cancel, saveAsNew, saveBtn);
+    modal.append(actions);
+
+    highlightCurrent();
+    renderBody(selectedKey);
+    syncActions();
+
+    overlay.append(modal);
+    let pressedOnBackdrop = false;
+    overlay.addEventListener("mousedown", (e) => (pressedOnBackdrop = e.target === overlay));
+    overlay.addEventListener("click", (e) => {
+        if (e.target === overlay && pressedOnBackdrop) overlay.remove();
+    });
+    document.body.append(overlay);
 }
 
-// saveStyling commits the styling change, then reloads once the server hot-reloads
-// so the new theme CSS and branding (rendered outside the editor canvas) take effect.
-// The editing flag stays set, so edit mode is re-entered after the reload.
+// themeSwatch builds a theme-picker swatch button (background tile + primary/positive/
+// negative dots) from a theme's stored field values, mirroring theme-preset-preview.html.
+// Unset colors fall back to the same defaults the server template uses.
+function themeSwatch(values) {
+    const btn = button("", "theme-preset");
+    if (values["light"] === "true" || values["light"] === true) btn.classList.add("theme-preset-light");
+    btn.style.setProperty("--color", colorToHex(values["background-color"]) || colorToHex("240 8 9"));
+
+    const primary = colorToHex(values["primary-color"]) || colorToHex("280 70 60");
+    const positive = colorToHex(values["positive-color"]) || (values["primary-color"] ? primary : colorToHex("280 70 60"));
+    const negative = colorToHex(values["negative-color"]) || colorToHex("0 70 70");
+    for (const c of [primary, positive, negative]) {
+        const dot = div("theme-color");
+        dot.style.setProperty("--color", c);
+        btn.append(dot);
+    }
+    return btn;
+}
+
+// saveStyling commits the base theme + branding change, then reloads once the server
+// hot-reloads so the new theme CSS and branding (rendered outside the editor canvas)
+// take effect. The editing flag stays set, so edit mode is re-entered after reload.
 async function saveStyling(theme, branding) {
     const before = await serverGeneration();
     if (!(await commit({ op: "editStyling", theme, branding }))) return;
-    toast("Styling saved, reloading…", "positive");
+    await waitForServerReload(before);
+    location.reload();
+}
+
+// savePreset overwrites (or creates) theme.presets.<key> with the given theme fields.
+async function savePreset(key, theme) {
+    const before = await serverGeneration();
+    if (!(await commit({ op: "editStyling", presetKey: key, theme }))) return;
+    await waitForServerReload(before);
+    location.reload();
+}
+
+// deletePreset removes theme.presets.<key>.
+async function deletePreset(key) {
+    const before = await serverGeneration();
+    if (!(await commit({ op: "deleteThemePreset", presetKey: key }))) return;
     await waitForServerReload(before);
     location.reload();
 }
@@ -1126,6 +1269,43 @@ function confirmAction(message, onConfirm) {
         if (e.target === overlay) overlay.remove();
     });
     document.body.append(overlay);
+}
+
+// promptModal asks for a single line of text in the app's modal style, replacing the
+// native prompt(). onSubmit receives the trimmed value; returning false keeps the modal
+// open (e.g. on a validation error), any other value closes it.
+function promptModal(title, placeholder, onSubmit) {
+    const overlay = div("editor-ui editor-modal-overlay");
+    const modal = div("editor-modal editor-confirm");
+    modal.append(div("editor-confirm-message", title));
+
+    const input = inputEl("text");
+    input.classList.add("editor-input");
+    if (placeholder) input.placeholder = placeholder;
+    modal.append(input);
+
+    const actions = div("editor-modal-actions");
+    const cancel = button("Cancel", "editor-btn");
+    const okBtn = button("Save", "editor-btn editor-btn-primary");
+    const submit = () => {
+        const val = input.value.trim();
+        if (!val) return;
+        if (onSubmit(val) !== false) overlay.remove();
+    };
+    cancel.addEventListener("click", () => overlay.remove());
+    okBtn.addEventListener("click", submit);
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submit();
+    });
+    actions.append(cancel, okBtn);
+    modal.append(actions);
+
+    overlay.append(modal);
+    overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    document.body.append(overlay);
+    input.focus();
 }
 
 function collapsible(title, content) {

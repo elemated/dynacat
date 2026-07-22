@@ -89,6 +89,21 @@
     background: var(--color-primary);
 }
 
+/* Availability status coloring, enabled via the show-release-state option:
+   green when everything is downloaded, red when a release is out but not yet
+   available, and the default primary while it is still upcoming. */
+.calendar-release-indicator-available {
+    background: var(--color-positive);
+}
+
+.calendar-release-indicator-released {
+    background: var(--color-negative);
+}
+
+.calendar-release-indicator-upcoming {
+    background: var(--color-upcoming);
+}
+
 .calendar-release-card {
     text-decoration: none;
     text-align: left;

@@ -437,6 +437,17 @@ body.editing .editor-styling-trigger {
     color: var(--color-text-highlight);
 }
 
+/* Theme picker sitting where the modal title would be, centered swatch row. */
+.editor-theme-picker {
+    display: flex;
+    justify-content: center;
+    padding-block: 0.4rem 0.2rem;
+}
+
+.editor-theme-picker .theme-choices {
+    justify-content: center;
+}
+
 .editor-modal-body {
     display: flex;
     flex-direction: column;
@@ -640,6 +651,27 @@ select.editor-input {
     background: var(--color-negative);
     color: var(--color-background);
     border-color: var(--color-negative);
+}
+
+/* Simple icon-only delete, pushed to the far left of the action row. */
+.editor-btn-icon-danger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: auto;
+    padding: 8px;
+    border-color: transparent;
+    color: var(--color-text-subdue);
+}
+
+.editor-btn-icon-danger .editor-icon-inline svg {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.editor-btn-icon-danger:hover {
+    border-color: transparent;
+    color: var(--color-negative);
 }
 
 .editor-confirm-message {

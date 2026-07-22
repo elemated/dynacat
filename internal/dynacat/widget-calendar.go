@@ -79,6 +79,12 @@ type calendarReleaseItem struct {
 	// "cinema", "episode"), used by the client to label the release and show an icon.
 	Type string `json:"type"`
 
+	// State is the availability status of this release ("available" - downloaded/on
+	// disk, "released" - release date passed but not yet available, "upcoming" - not
+	// released yet). Used by the client to color the day underline when the
+	// show-release-state option is enabled.
+	State string `json:"state"`
+
 	// dedupKey identifies the underlying movie/episode so the same release coming
 	// from multiple hosts of the same type is only shown once. Unexported so it is
 	// not serialized to the client.
@@ -97,6 +103,7 @@ type calendarWidget struct {
 	Frameless              bool                     `yaml:"frameless"`
 	Hosts                  []calendarReleaseService `yaml:"hosts"`
 	ReleaseTypes           stringListField          `yaml:"release-types"`
+	ShowReleaseState       bool                     `yaml:"show-release-state"`
 
 	cachedHTML          template.HTML   `yaml:"-"`
 	releasesInterval    time.Duration   `yaml:"-"`

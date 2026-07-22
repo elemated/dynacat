@@ -823,6 +823,7 @@ Preview:
 | first-day-of-week | string | no | monday |
 | hosts | array | no | |
 | release-types | list of strings | no | cinema, physical, digital, episode |
+| show-release-state | boolean | no | false |
 | update-interval | string | no | 15m |
 
 ##### `first-day-of-week`
@@ -899,6 +900,35 @@ By default all types are shown. Restrict it by listing only the ones you want.
 ```yaml
 - type: calendar
   release-types: digital
+  hosts:
+    - url: radarr:https://radarr.domain.com
+      token: ${RADARR_KEY}
+```
+
+##### `show-release-state`
+By default, the line under a day with releases is always your theme's <span style="color: #b98adf">⬤</span> `primary-color` (the purple in the default theme). It is a static marker that only tells you something lands on that day, with no indication of whether it is out yet or downloaded.
+
+Set `show-release-state` to `true` to instead color that line by the availability status of the day's releases, pulled from Sonarr/Radarr. Each state maps to one of your theme colors:
+
+| Color | State | Meaning |
+| ----- | ----- | ------- |
+| <span style="color: #4caf50">⬤</span> `positive-color` | `available` | Out and already downloaded, ready to watch |
+| <span style="color: #e05252">⬤</span> `negative-color` | `released` | Out now, but not downloaded yet |
+| <span style="color: #d8b46a">⬤</span> `color-upcoming` | `upcoming` | Not out yet, its release date is still in the future |
+
+`available` uses your theme's `positive-color` and `released` uses `negative-color`. `upcoming` has its own amber color so it always stands out from the other two.
+
+> [!NOTE]
+>
+> `positive-color` defaults to `primary-color`. If you want downloaded (`available`) days to look distinct, set a separate [`positive-color`](#positive-color) in your theme (for example a green). The `upcoming` amber can be overridden with the `--color-upcoming` CSS variable via a [`custom-css-file`](#custom-css-file).
+
+If a day has several releases with different states, the line shows the least available one, so it stays on the `released` or `upcoming` color until nothing is left pending. The priority is `released` → `upcoming` → `available`.
+
+Only relevant when `hosts` is configured.
+
+```yaml
+- type: calendar
+  show-release-state: true
   hosts:
     - url: radarr:https://radarr.domain.com
       token: ${RADARR_KEY}

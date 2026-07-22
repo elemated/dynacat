@@ -64,10 +64,27 @@ export default function(element) {
         ? Releases(widgetElement.dataset.widgetId, Number(element.dataset.calendarReleasesInterval) || 0)
         : null;
 
+    const showReleaseState = element.dataset.calendarReleaseState === "true";
+
     element.swapWith(Calendar(
         Number(element.dataset.firstDayOfWeek ?? 1),
-        releases
+        releases,
+        showReleaseState
     ));
+}
+
+// aggregateReleaseState collapses a day's releases into a single availability
+// status for the underline color. A day flags "released" (something out but not
+// yet available) over "upcoming" over "available" (everything on disk).
+function aggregateReleaseState(items) {
+    let hasReleased = false, hasUpcoming = false;
+    for (const item of items) {
+        if (item.state === "released") hasReleased = true;
+        else if (item.state === "upcoming") hasUpcoming = true;
+    }
+    if (hasReleased) return "released";
+    if (hasUpcoming) return "upcoming";
+    return "available";
 }
 
 // Releases manages fetching + caching per-month Sonarr/Radarr release data and
@@ -105,7 +122,7 @@ function Releases(widgetId, intervalMs) {
 }
 
 // TODO: when viewing the previous/next month, display the current date if it's within the spill-over days
-function Calendar(firstDay, releases) {
+function Calendar(firstDay, releases, showReleaseState) {
     let header, dates;
     let advanceTimeTicker;
     let releaseTicker;
@@ -143,7 +160,7 @@ function Calendar(firstDay, releases) {
 
     const calendar = elem().classes("calendar").append(
         header = Header(nextClicked, prevClicked, undoClicked),
-        dates = Dates(firstDay, releases)
+        dates = Dates(firstDay, releases, showReleaseState)
     );
 
     update(now);
@@ -217,7 +234,7 @@ function Header(nextClicked, prevClicked, undoClicked) {
     });
 }
 
-function Dates(firstDay, releases) {
+function Dates(firstDay, releases, showReleaseState) {
     let dates, lastRenderedDate, animating = false;
 
     // applyMarkers (re)draws release indicators + popovers onto the day cells for
@@ -246,7 +263,7 @@ function Dates(firstDay, releases) {
 
             const items = data[isoDate(cellDate)];
             if (items && items.length) {
-                cell.append(releaseMarker(items));
+                cell.append(releaseMarker(items, showReleaseState));
             }
         }
 
@@ -322,10 +339,15 @@ function Dates(firstDay, releases) {
     ).component({ update, applyMarkers });
 }
 
-function releaseMarker(items) {
+function releaseMarker(items, showReleaseState) {
     const list = elem().classes("list", "list-gap-10");
     for (const item of items) {
         list.append(releaseCard(item));
+    }
+
+    const indicator = elem().classes("calendar-release-indicator");
+    if (showReleaseState) {
+        indicator.classes("calendar-release-indicator-" + aggregateReleaseState(items));
     }
 
     return elem()
@@ -337,7 +359,7 @@ function releaseMarker(items) {
             "data-popover-hide-delay": "80",
         })
         .append(
-            elem().classes("calendar-release-indicator"),
+            indicator,
             elem().attr("data-popover-html", "").append(list)
         );
 }
