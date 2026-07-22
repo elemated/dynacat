@@ -481,7 +481,12 @@ function buildWidgetModal(type, values, onSave) {
 
     for (const field of schema.fields) {
         if (field.name === "widgets") continue; // container children are edited via nesting
-        const control = renderField(field, values[field.name]);
+        if (field.name === "autocomplete") continue; // folded into autocomplete-provider below
+
+        const control = field.name === "autocomplete-provider"
+            ? renderAutocompleteProviderField(field, values["autocomplete-provider"], values["autocomplete"])
+            : renderField(field, values[field.name]);
+
         controls.push(control);
         (field.advanced ? advanced : basic).append(control.wrapper);
     }
@@ -494,6 +499,7 @@ function buildWidgetModal(type, values, onSave) {
         const rawFields = {};
         for (const c of controls) {
             const value = c.read();
+            if (c.extra) Object.assign(fields, c.extra());
             if (value === undefined) continue;
             if (c.field.kind === "yaml") rawFields[c.field.name] = value;
             else fields[c.field.name] = value;
@@ -574,6 +580,39 @@ function renderSearchEngineField(field, value) {
     const wrapper = labeled(field.label, select, field.required);
     wrapper.append(customInput);
     return { field, wrapper, read: () => (select.value === "custom" ? customInput.value.trim() || undefined : select.value || undefined) };
+}
+
+// renderAutocompleteProviderField is renderSearchEngineField plus the "autocomplete"
+// bool: the "Off" option disables autocomplete rather than just clearing the provider.
+function renderAutocompleteProviderField(field, value, autocompleteValue) {
+    const known = (field.options || []).filter((o) => o !== "custom");
+    const isOff = autocompleteValue === "false" || autocompleteValue === false;
+    const isCustom = value && !known.includes(value);
+
+    const select = document.createElement("select");
+    select.className = "editor-input";
+    select.append(new Option("Off", ""));
+    for (const opt of known) select.append(new Option(opt, opt));
+    select.append(new Option("custom", "custom"));
+    select.value = isOff ? "" : (isCustom ? "custom" : value || known[0] || "");
+
+    const customInput = inputEl("text");
+    customInput.placeholder = "https://example.com/suggest?q={QUERY}";
+    customInput.style.display = select.value === "custom" ? "" : "none";
+    if (isCustom) customInput.value = value;
+    select.addEventListener("change", () => {
+        customInput.style.display = select.value === "custom" ? "" : "none";
+    });
+
+    const wrapper = labeled(field.label, select, field.required);
+    wrapper.append(customInput);
+
+    return {
+        field,
+        wrapper,
+        read: () => (select.value === "" ? undefined : (select.value === "custom" ? customInput.value.trim() || undefined : select.value)),
+        extra: () => ({ autocomplete: select.value !== "" }),
+    };
 }
 
 function iconPreview(input) {

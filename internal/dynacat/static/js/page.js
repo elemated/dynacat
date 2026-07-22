@@ -337,14 +337,23 @@ function setupSearchBoxes() {
             });
         }
 
-        // Search Autocomplete
-        if (widget.dataset.autocomplete === "true") {
+        // Search Autocomplete + bookmark matching
+        if (widget.dataset.autocomplete === "true" || widget.dataset.bookmarksEnabled === "true") {
+            const autocompleteEnabled = widget.dataset.autocomplete === "true";
+            const bookmarksEnabled = widget.dataset.bookmarksEnabled === "true";
             const autocompleteEl = widget.querySelector(".search-autocomplete");
+            const bookmarks = Array.from(widget.querySelectorAll(".search-bookmarks > input")).map((el) => ({
+                type: "bookmark",
+                title: el.dataset.title,
+                url: el.dataset.url,
+                target: el.dataset.target || "",
+                icon: el.dataset.icon || "",
+                iconAutoInvert: el.dataset.iconAutoInvert === "true",
+            }));
             let acItems = [];
             let acIndex = -1;
             let acDebounce = null;
             let acVisible = false;
-            let acAbove = false;
             let acRepositioner = null;
             let acRepositionFrame = null;
 
@@ -355,7 +364,6 @@ function setupSearchBoxes() {
                 const spaceAbove = rect.top;
                 const maxH = 280;
 
-                // Switch to above if not enough space below and more space above
                 const goAbove = spaceBelow < 120 && spaceAbove > spaceBelow;
 
                 autocompleteEl.style.left = rect.left + "px";
@@ -371,12 +379,7 @@ function setupSearchBoxes() {
                     autocompleteEl.style.maxHeight = Math.min(maxH, spaceBelow - 4) + "px";
                 }
 
-                if (goAbove !== acAbove) {
-                    acAbove = goAbove;
-                }
-
-                // Keep direction classes in sync on every reposition so the initial
-                // below state also receives its border adjustments.
+                // Sync direction classes every reposition so the initial below state gets its borders too.
                 autocompleteEl.classList.toggle("search-autocomplete-above", goAbove);
                 widget.classList.toggle("search-suggestions-above", goAbove);
                 widget.classList.toggle("search-suggestions-below", !goAbove);
@@ -414,7 +417,6 @@ function setupSearchBoxes() {
                 autocompleteEl.classList.remove("active", "search-autocomplete-above");
                 widget.classList.remove("search-suggestions-above", "search-suggestions-below");
                 acVisible = false;
-                acAbove = false;
                 acIndex = -1;
             };
 
@@ -424,20 +426,65 @@ function setupSearchBoxes() {
                 acIndex = i;
             };
 
-            const renderAC = (suggestions) => {
-                acItems = suggestions;
+            const BOOKMARK_MATCH_LIMIT = 3;
+
+            const matchBookmarks = (query) => {
+                if (!bookmarksEnabled || !query) return [];
+                const lowerQuery = query.toLowerCase();
+                return bookmarks
+                    .filter((b) => b.title && b.title.toLowerCase().startsWith(lowerQuery))
+                    .slice(0, BOOKMARK_MATCH_LIMIT);
+            };
+
+            const selectItem = (item) => {
+                if (item.type === "bookmark") {
+                    hideAC();
+                    if (item.target === "_blank") {
+                        window.open(item.url, item.target).focus();
+                    } else {
+                        window.location.href = item.url;
+                    }
+                    return;
+                }
+
+                inputElement.value = item.phrase;
+                hideAC();
+                submitSearch(newTab);
+            };
+
+            const renderAC = (items) => {
+                acItems = items;
                 acIndex = -1;
                 autocompleteEl.innerHTML = "";
-                if (suggestions.length === 0) { hideAC(); return; }
-                suggestions.forEach((phrase, idx) => {
+                if (items.length === 0) { hideAC(); return; }
+                items.forEach((acItem, idx) => {
                     const item = document.createElement("div");
-                    item.className = "search-autocomplete-item";
-                    item.textContent = phrase;
+
+                    if (acItem.type === "bookmark") {
+                        item.className = "search-autocomplete-item search-autocomplete-item-bookmark";
+                        if (acItem.icon) {
+                            const icon = document.createElement("img");
+                            icon.className = "search-autocomplete-item-bookmark-icon" + (acItem.iconAutoInvert ? " flat-icon" : "");
+                            icon.src = acItem.icon;
+                            icon.alt = "";
+                            item.appendChild(icon);
+                        } else {
+                            const arrow = document.createElement("span");
+                            arrow.className = "search-autocomplete-item-bookmark-arrow";
+                            arrow.textContent = "↗";
+                            item.appendChild(arrow);
+                        }
+                        const label = document.createElement("span");
+                        label.textContent = acItem.title;
+                        item.appendChild(label);
+                    } else {
+                        item.className = "search-autocomplete-item";
+                        item.textContent = acItem.phrase;
+                    }
+
                     item.addEventListener("mousedown", (e) => {
                         e.preventDefault();
-                        inputElement.value = phrase;
-                        hideAC();
-                        submitSearch(newTab);
+                        selectItem(acItem);
                     });
                     item.addEventListener("mousemove", () => {
                         setACIndex(idx);
@@ -447,19 +494,33 @@ function setupSearchBoxes() {
                 showAC();
             };
 
+            const updateSuggestions = (query, phraseItems) => {
+                if (inputElement.value.trim() !== query) return;
+                renderAC([...matchBookmarks(query), ...phraseItems]);
+            };
+
             const fetchSuggestions = (query) => {
-                if (!query || query.length < 2 || currentBang != null) {
+                if (!query || currentBang != null) {
                     hideAC();
                     return;
                 }
+
+                if (!autocompleteEnabled || query.length < 2) {
+                    updateSuggestions(query, []);
+                    return;
+                }
+
                 const provider = widget.dataset.autocompleteProvider || "duckduckgo";
-                fetch("/api/search/autocomplete?q=" + encodeURIComponent(query) + "&provider=" + encodeURIComponent(provider))
+                let suggestionsUrl = "/api/search/autocomplete?q=" + encodeURIComponent(query) + "&provider=" + encodeURIComponent(provider);
+                if (provider === "custom" && widget.dataset.autocompleteWidgetId) {
+                    suggestionsUrl += "&widgetId=" + encodeURIComponent(widget.dataset.autocompleteWidgetId);
+                }
+                fetch(suggestionsUrl)
                     .then((r) => r.json())
                     .then((data) => {
-                        if (inputElement.value.trim() !== query) return;
-                        renderAC(data.map((d) => d.phrase));
+                        updateSuggestions(query, data.map((d) => ({ type: "phrase", phrase: d.phrase })));
                     })
-                    .catch(() => hideAC());
+                    .catch(() => updateSuggestions(query, []));
             };
 
             inputElement.addEventListener("input", () => {
@@ -479,16 +540,14 @@ function setupSearchBoxes() {
                     setACIndex(Math.max(acIndex - 1, -1));
                 } else if (event.key === "Enter" && acIndex >= 0) {
                     event.preventDefault();
-                    inputElement.value = acItems[acIndex];
-                    hideAC();
-                    submitSearch(newTab);
+                    selectItem(acItems[acIndex]);
                 } else if (event.key === "Escape") {
                     hideAC();
                 }
             });
 
-            // Delay hide to guard against spurious blur (e.g. Chrome scroll-on-focus
-            // near viewport bottom). Only close if focus genuinely left the input.
+            // Delay hide to survive spurious blur (Chrome scroll-on-focus); close only
+            // if focus really left the input.
             inputElement.addEventListener("blur", () => {
                 setTimeout(() => {
                     if (document.activeElement !== inputElement) {

@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -127,6 +129,48 @@ func (a *application) handleImageProxyRequest(w http.ResponseWriter, r *http.Req
 	}
 }
 
+// respondWithOpenSearchSuggestions fetches requestURL and writes its suggestions
+// to w. Expects the OpenSearch format ["query", ["suggestion1", ...]], hence raw[1].
+func (a *application) respondWithOpenSearchSuggestions(w http.ResponseWriter, r *http.Request, requestURL string) {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, requestURL, nil)
+	if err != nil {
+		http.Error(w, "Failed to create request", http.StatusInternalServerError)
+		return
+	}
+	setBrowserUserAgentHeader(req)
+
+	resp, err := defaultHTTPClient.Do(req)
+	if err != nil {
+		http.Error(w, "Failed to fetch suggestions", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	var raw []json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil || len(raw) < 2 {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("[]"))
+		return
+	}
+
+	var suggestions []string
+	if err := json.Unmarshal(raw[1], &suggestions); err != nil {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("[]"))
+		return
+	}
+
+	type phrase struct {
+		Phrase string `json:"phrase"`
+	}
+	result := make([]phrase, len(suggestions))
+	for i, s := range suggestions {
+		result[i] = phrase{Phrase: s}
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}
+
 func (a *application) handleSearchAutocompleteRequest(w http.ResponseWriter, r *http.Request) {
 	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
 		return
@@ -145,44 +189,33 @@ func (a *application) handleSearchAutocompleteRequest(w http.ResponseWriter, r *
 
 	if provider == "brave" {
 		braveURL := "https://search.brave.com/api/suggest?" + url.Values{"q": {query}, "rich": {"false"}}.Encode()
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, braveURL, nil)
-		if err != nil {
-			http.Error(w, "Failed to create request", http.StatusInternalServerError)
-			return
-		}
-		setBrowserUserAgentHeader(req)
+		a.respondWithOpenSearchSuggestions(w, r, braveURL)
+		return
+	}
 
-		resp, err := defaultHTTPClient.Do(req)
+	if provider == "custom" {
+		widgetID, err := strconv.ParseUint(r.URL.Query().Get("widgetId"), 10, 64)
 		if err != nil {
-			http.Error(w, "Failed to fetch suggestions", http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-
-		// Brave returns OpenSearch format: ["query", ["s1", "s2", ...]]
-		var raw []json.RawMessage
-		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil || len(raw) < 2 {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("[]"))
 			return
 		}
 
-		var suggestions []string
-		if err := json.Unmarshal(raw[1], &suggestions); err != nil {
+		urlTemplate, ok := a.searchAutocompleteURLs[widgetID]
+		if !ok {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("[]"))
 			return
 		}
 
-		type phrase struct {
-			Phrase string `json:"phrase"`
+		customURL := strings.ReplaceAll(urlTemplate, "{QUERY}", url.QueryEscape(query))
+		if err := validateImageProxyURL(customURL); err != nil {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("[]"))
+			return
 		}
-		result := make([]phrase, len(suggestions))
-		for i, s := range suggestions {
-			result[i] = phrase{Phrase: s}
-		}
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(result)
+
+		a.respondWithOpenSearchSuggestions(w, r, customURL)
 		return
 	}
 

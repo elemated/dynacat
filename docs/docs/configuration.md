@@ -2534,6 +2534,8 @@ Preview:
 | placeholder | string | no | Type here to search… |
 | autocomplete | boolean | no | true |
 | autocomplete-provider | string | no | duckduckgo |
+| include-bookmarks | boolean | no | false |
+| cross-page-bookmarks | boolean | no | false |
 | bangs | array | no | |
 
 ##### `search-engine`
@@ -2565,12 +2567,45 @@ When set, modifies the text displayed in the input field before typing.
 When set to `true` (default), displays search suggestions as you type. Navigate suggestions with <kbd>↑</kbd> and <kbd>↓</kbd> arrow keys, select with <kbd>Enter</kbd>, or dismiss with <kbd>Escape</kbd>. Set to `false` to disable autocompletion.
 
 ##### `autocomplete-provider`
-The provider used for search suggestions. Possible values are `duckduckgo` (default) and `brave`.
+Either `duckduckgo` (default), `brave`, or a URL to a custom suggestion endpoint — works the same way as [`search-engine`](#search-engine): pick a known provider by name, or supply your own URL directly.
 
 | Value | Provider |
 | ----- | -------- |
 | duckduckgo | DuckDuckGo autocomplete |
 | brave | Brave Search autocomplete |
+| a URL containing `{QUERY}` | Your own suggestion endpoint |
+
+A custom URL must return the [OpenSearch suggestions format](https://github.com/dewitt/opensearch/blob/master/opensearch-1-1-draft-6.md#the-json-format) (`["query", ["suggestion 1", "suggestion 2", ...]]`), which is what most self-hosted and public search engines (SearXNG, Wikipedia, etc.) expose. Use `{QUERY}` to indicate where the typed query gets placed. The request is made server-side, so the URL is never sent to the browser. Example:
+
+```yaml
+- type: search
+  search-engine: https://en.wikipedia.org/wiki/Special:Search?search={QUERY}
+  autocomplete-provider: https://en.wikipedia.org/w/api.php?action=opensearch&format=json&search={QUERY}
+```
+
+> [!NOTE]
+>
+> Older configs written with `autocomplete-provider: custom` alongside a separate `autocomplete-url: <url>` still work, but should be migrated to the single-field form above — the `autocomplete-url` property is deprecated and no longer shown in the interactive editor.
+
+##### `include-bookmarks`
+When set to `true`, matches what you type against the titles of your [bookmarks](#bookmarks) (case-insensitive, matching from the start of the title) and shows matching bookmarks above the regular search suggestions. Clicking a bookmark match navigates straight to its URL instead of performing a search. Up to 3 matches are shown.
+
+By default only bookmarks on the same page as the search widget are matched. Use [`cross-page-bookmarks`](#cross-page-bookmarks) to match bookmarks from every page.
+
+Each match shows the bookmark's own [icon](#icons) if it has one, or a small arrow otherwise, exactly like in the bookmarks widget itself.
+
+```yaml
+- type: search
+  include-bookmarks: true
+```
+
+##### `cross-page-bookmarks`
+When set to `true`, implies [`include-bookmarks`](#include-bookmarks) and widens the search to bookmarks on every page, not just the page the search widget is on.
+
+```yaml
+- type: search
+  cross-page-bookmarks: true
+```
 
 ##### `bangs`
 What now? [Bangs](https://duckduckgo.com/bangs). They're shortcuts that allow you to use the same search box for many different sites. Assuming you have it configured, if for example you start your search input with `!yt` you'd be able to perform a search on YouTube:

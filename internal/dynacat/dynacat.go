@@ -74,20 +74,23 @@ type application struct {
 	imageProxyMu   sync.RWMutex
 	imageProxyURLs map[string]imageProxyInfo
 
+	searchAutocompleteURLs map[uint64]string
+
 	imageCache *imageCache
 }
 
 func newApplication(c *config) (*application, error) {
 	app := &application{
-		Version:          buildVersion,
-		CreatedAt:        time.Now(),
-		Config:           *c,
-		slugToPage:       make(map[string]*page),
-		widgetByID:       make(map[uint64]widget),
-		widgetToPage:     make(map[uint64]*page),
-		sseClients:       make(map[*sseClient]struct{}),
-		imageProxyURLs:   make(map[string]imageProxyInfo),
-		todoListIDToPage: make(map[string]*page),
+		Version:                buildVersion,
+		CreatedAt:              time.Now(),
+		Config:                 *c,
+		slugToPage:             make(map[string]*page),
+		widgetByID:             make(map[uint64]widget),
+		widgetToPage:           make(map[uint64]*page),
+		sseClients:             make(map[*sseClient]struct{}),
+		imageProxyURLs:         make(map[string]imageProxyInfo),
+		todoListIDToPage:       make(map[string]*page),
+		searchAutocompleteURLs: make(map[uint64]string),
 	}
 	config := &app.Config
 
@@ -334,6 +337,20 @@ func newApplication(c *config) (*application, error) {
 			}
 			collectTodoListIDs(column.Widgets)
 		}
+	}
+
+	for id, w := range app.widgetByID {
+		sw, ok := w.(*searchWidget)
+		if !ok || !sw.IncludeBookmarks {
+			continue
+		}
+
+		var pageFilter *page
+		if !sw.CrossPageBookmarks {
+			pageFilter = app.widgetToPage[id]
+		}
+
+		sw.collectBookmarks(app, pageFilter)
 	}
 
 	config.Theme.CustomCSSFile = app.resolveUserDefinedAssetPath(config.Theme.CustomCSSFile)

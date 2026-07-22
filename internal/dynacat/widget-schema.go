@@ -164,7 +164,7 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	},
 	"search": {
 		"search-engine":         {Options: []string{"duckduckgo", "google", "bing", "perplexity", "kagi", "startpage", "qwant", "brave", "custom"}},
-		"autocomplete-provider": {Options: []string{"duckduckgo", "brave"}},
+		"autocomplete-provider": {Options: []string{"duckduckgo", "brave", "custom"}},
 	},
 	"extension": {
 		"url":                              {Required: true},
@@ -277,6 +277,11 @@ func allWidgetSchemas() []widgetTypeSchema {
 	return schemas
 }
 
+// deprecatedSchemaFields still parse for back-compat but never appear in the editor.
+var deprecatedSchemaFields = map[string]bool{
+	"autocomplete-url": true,
+}
+
 // reflectWidgetFields walks yaml-tagged fields, recursing into inlined structs.
 func reflectWidgetFields(t reflect.Type) []widgetFieldSchema {
 	var fields []widgetFieldSchema
@@ -294,7 +299,7 @@ func reflectWidgetFields(t reflect.Type) []widgetFieldSchema {
 			fields = append(fields, reflectWidgetFields(ft)...)
 			continue
 		}
-		if name == "" || name == "-" || name == "type" || !f.IsExported() {
+		if name == "" || name == "-" || name == "type" || !f.IsExported() || deprecatedSchemaFields[name] {
 			continue
 		}
 
