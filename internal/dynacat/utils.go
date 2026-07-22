@@ -20,9 +20,9 @@ var whitespaceAtBeginningOfLinePattern = regexp.MustCompile(`(?m)^\s+`)
 func percentChange(current, previous float64) float64 {
 	if previous == 0 {
 		if current == 0 {
-			return 0 // 0% change if both are 0
+			return 0
 		}
-		return 100 // 100% increase if going from 0 to something
+		return 100
 	}
 
 	return (current/previous - 1) * 100
@@ -92,7 +92,6 @@ func maybeCopySliceWithoutZeroValues[T int | float64](values []T) []T {
 
 var urlSchemePattern = regexp.MustCompile(`^[a-z]+:\/\/`)
 
-// pageFileNamePattern strips characters not safe in a page filename slug.
 var pageFileNamePattern = regexp.MustCompile(`[^a-z0-9-]`)
 
 func stripURLScheme(url string) string {
@@ -192,8 +191,6 @@ func ternary[T any](condition bool, a, b T) T {
 	return b
 }
 
-// Having compile time errors about unused variables is cool and all, but I don't want to
-// have to constantly comment out my code while I'm working on it and testing things out
 func ItsUsedTrustMeBro(...any) {}
 
 func hslToHex(h, s, l float64) string {

@@ -86,9 +86,6 @@ type MointpointRequest struct {
 	Hide *bool  `yaml:"hide"`
 }
 
-// Currently caches hostname indefinitely which isn't ideal
-// Potential issue with caching boot time as it may not initially get reported correctly:
-// https://github.com/shirou/gopsutil/issues/842#issuecomment-1908972344
 type cacheableHostInfo struct {
 	available bool
 	hostname  string
@@ -163,10 +160,6 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 		if err == nil {
 			info.CPU.LoadIsAvailable = true
 			if runtime.GOOS == "windows" {
-				// The numbers returned here seem unreliable on Windows. Even with the CPU pegged
-				// at close to 50% for multiple minutes, load1 is sometimes way under or way over
-				// with no clear pattern. Dividing by core count gives numbers that are way too
-				// low so that's likely not necessary as it is with unix.
 				info.CPU.Load1Percent = uint8(math.Min(loadAvg.Load1*100, 100))
 				info.CPU.Load15Percent = uint8(math.Min(loadAvg.Load15*100, 100))
 			} else {
@@ -200,11 +193,6 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 		addErr(fmt.Errorf("getting swap memory info: %v", err))
 	}
 
-	// currently disabled on Windows because it requires elevated privilidges, otherwise
-	// keeps returning a single sensor with key "ACPI\\ThermalZone\\TZ00_0" which
-	// doesn't seem to be the CPU sensor or correspond to anything useful when
-	// compared against the temperatures Libre Hardware Monitor reports.
-	// Also disabled on the bsd's because it's not implemented by go-psutil for them
 	if runtime.GOOS != "windows" && runtime.GOOS != "openbsd" && runtime.GOOS != "netbsd" && runtime.GOOS != "freebsd" {
 		sensorReadings, err := sensors.SensorsTemperatures()
 		_, errIsWarning := err.(*sensors.Warnings)
@@ -250,8 +238,6 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 			usedMB := usage.Used / 1024 / 1024
 			usedPercent := uint8(math.Min(usage.UsedPercent, 100))
 
-			// ZFS pool roots return Used=0 via statfs(2) when data is stored in child
-			// datasets (e.g. TrueNAS SCALE). Override with accurate values from `zfs list`.
 			if usage.Fstype == "zfs" {
 				if zfsTotal, zfsUsed, zfsErr := getZFSUsage(requestedPath); zfsErr == nil {
 					totalMB = zfsTotal / 1024 / 1024
@@ -287,10 +273,6 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 			addErr(fmt.Errorf("getting filesystems: %v", err))
 		}
 
-		// Inside containers (e.g. Docker), disk.Partitions(false) only returns
-		// devices starting with /dev/ - the overlay root filesystem is skipped.
-		// Fall back to "/" so disk usage is still reported without requiring a
-		// host bind-mount.
 		if len(addedMountpoints) == 0 {
 			addMountpointInfo("/", req.Mountpoints["/"])
 		}
@@ -307,11 +289,6 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 	return info, errs
 }
 
-// getZFSUsage returns accurate (totalBytes, usedBytes) for a ZFS mountpoint by
-// invoking `zfs list`. This is necessary because statfs(2) on a ZFS pool root
-// returns Used=0 when all data lives in child datasets (e.g. TrueNAS SCALE).
-// Returns an error if the `zfs` binary is unavailable or the mountpoint is not
-// found, so callers can fall back to the statfs values.
 func getZFSUsage(mountpoint string) (totalBytes, usedBytes uint64, err error) {
 	cmd := exec.Command("zfs", "list", "-H", "-p", "-o", "used,available,mountpoint")
 	out, err := cmd.Output()

@@ -83,8 +83,6 @@ func setBrowserUserAgentHeader(request *http.Request) {
 	request.Header.Set("User-Agent", getBrowserUserAgentHeader())
 }
 
-// fetchRequestBody fetches a request body, sharing the result with other
-// widgets when the request is a cacheable GET, otherwise issuing it directly.
 func fetchRequestBody(client requestDoer, request *http.Request) (int, []byte, error) {
 	if request.Method == "" || request.Method == http.MethodGet {
 		status, _, body, err := globalSharedFetcher.do(client, request, sharedFetchMaxAgeForRequest(request))
@@ -186,14 +184,6 @@ func (job *workerPoolJob[I, O]) withWorkers(workers int) *workerPoolJob[I, O] {
 
 	return job
 }
-
-// func (job *workerPoolJob[I, O]) withContext(ctx context.Context) *workerPoolJob[I, O] {
-// 	if ctx != nil {
-// 		job.ctx = ctx
-// 	}
-
-// 	return job
-// }
 
 func newJob[I any, O any](task func(I) (O, error), data []I) *workerPoolJob[I, O] {
 	return &workerPoolJob[I, O]{

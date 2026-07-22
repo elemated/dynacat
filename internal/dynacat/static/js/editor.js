@@ -1,10 +1,3 @@
-// Interactive page editor: palette, drag and drop, option modals and layout tools.
-// Loaded lazily on demand so it adds no overhead to normal page rendering.
-//
-// In edit mode the page columns are re-rendered from the config as simple icon+title
-// cards (not live widgets), so editing never fights expanded widget content. Each save
-// re-fetches the config and re-renders in place; the page only reloads when editing ends.
-
 const PD = typeof pageData !== "undefined" ? pageData : window.pageData;
 const API = `${PD.baseURL}/api/editor`;
 
@@ -14,7 +7,7 @@ const state = {
     schemaByType: {},
     config: null,
     pageIndex: -1,
-    drag: null, // {type} for a palette item, {fromPath} for a placed card
+    drag: null,
 };
 
 export async function toggleEditor() {
@@ -48,8 +41,6 @@ async function enterEditor() {
     buildAddPageButton();
     setupStylingTrigger();
 
-    // page.js injects content only once the cache finishes building (marking #page
-    // content-ready), and may rebuild it. Wait for ready, then guard against rebuilds.
     const ready = await waitForPageReady();
     if (!ready) {
         toast("Page content is still loading, try again in a moment", "negative");
@@ -59,7 +50,6 @@ async function enterEditor() {
     guardCanvas();
 }
 
-// waitForPageReady resolves once page.js marks the page content-ready, or null on timeout.
 function waitForPageReady(timeout = 30000) {
     const page = document.getElementById("page");
     if (page && page.classList.contains("content-ready")) return Promise.resolve(page);
@@ -79,7 +69,6 @@ function waitForPageReady(timeout = 30000) {
     });
 }
 
-// guardCanvas re-renders our cards if page.js later replaces the whole content.
 function guardCanvas() {
     const content = document.getElementById("page-content");
     if (!content) return;
@@ -90,7 +79,6 @@ function guardCanvas() {
 }
 
 function exitEditor() {
-    // Reload to restore the live widgets we replaced with editor cards.
     sessionStorage.removeItem("dynacat-editing");
     location.reload();
 }
@@ -105,7 +93,6 @@ async function apiGet(path) {
     return res.json();
 }
 
-// commit posts a mutation; returns true on success, shows an error toast otherwise.
 async function commit(mutation) {
     const res = await fetch(`${API}/config`, {
         method: "POST",
@@ -118,15 +105,12 @@ async function commit(mutation) {
     return false;
 }
 
-// save commits then re-fetches the config and re-renders the canvas in place.
 async function save(mutation) {
     if (!(await commit(mutation))) return;
     state.config = await apiGet("/config");
     renderCanvas();
 }
 
-// commitAndNavigate commits a page-level change, waits for the server to hot-reload
-// (so the navigation reflects it), then runs navigate().
 async function commitAndNavigate(mutation, navigate) {
     const before = await serverGeneration();
     if (!(await commit(mutation))) return;
@@ -159,7 +143,6 @@ function waitForServerReload(before, timeout = 6000) {
 
 function buildPalette() {
     const dock = div("editor-ui editor-palette");
-    // Let the mouse wheel scroll the horizontal list instead of needing the scrollbar.
     dock.addEventListener("wheel", (e) => {
         if (!e.deltaY) return;
         e.preventDefault();
@@ -183,7 +166,6 @@ function buildPalette() {
 // Canvas: columns and widget cards rendered from the config
 //
 
-// slim pages allow 2 columns, standard ones 3.
 function maxColumnsFor(page) {
     return page.width === "slim" ? 2 : 3;
 }
@@ -205,7 +187,7 @@ function renderCanvas() {
         container.append(colEl);
     });
     if (canAddColumn) container.append(addColumnLine(page.columns.length));
-    container.dataset.editorCanvas = "1"; // marks this as our render so the guard skips it
+    container.dataset.editorCanvas = "1";
 }
 
 function buildColumnTools(colIndex) {
@@ -255,10 +237,9 @@ function buildWidgetCard(w, path) {
     header.append(tools);
     card.append(header);
 
-    // Container widgets get a nested drop zone showing their child cards.
     if (CONTAINER_TYPES.includes(w.type)) {
         card.classList.add("editor-container");
-        const horizontal = w.type === "split-column"; // split lays children out in columns
+        const horizontal = w.type === "split-column";
         const nested = div(`editor-nested${horizontal ? " editor-nested-split" : ""}`);
         setupDropTarget(nested, path, horizontal);
         (w.widgets || []).forEach((child, j) => nested.append(buildWidgetCard(child, [...path, j])));
@@ -278,7 +259,7 @@ function setupDropTarget(element, basePath, horizontal = false) {
 
     element.addEventListener("dragover", (e) => {
         e.preventDefault();
-        e.stopPropagation(); // nested targets take precedence over the parent column
+        e.stopPropagation();
         positionMarker(element, marker, dropIndex(element, pointer(e), horizontal), horizontal);
     });
     element.addEventListener("dragleave", (e) => {
@@ -293,11 +274,7 @@ function setupDropTarget(element, basePath, horizontal = false) {
     });
 }
 
-// positionMarker places the insertion line as an absolute overlay so it never
-// reflows the widgets (which would make the drop position jitter).
 function positionMarker(element, marker, index, horizontal) {
-    // Only one insertion line at a time (a parent's marker isn't cleared when the
-    // pointer moves into a nested drop zone, since dragleave doesn't fire).
     document.querySelectorAll(".editor-drop-marker").forEach((m) => m !== marker && m.remove());
 
     const widgets = directWidgets(element);
@@ -322,7 +299,6 @@ function positionMarker(element, marker, index, horizontal) {
     if (!marker.isConnected) element.appendChild(marker);
 }
 
-// dropIndex returns the insertion position based on the pointer against card midpoints.
 function dropIndex(element, pointer, horizontal) {
     const widgets = directWidgets(element);
     for (let i = 0; i < widgets.length; i++) {
@@ -349,7 +325,6 @@ function removeWidget(path) {
     save({ op: "removeWidget", page: state.pageIndex, path });
 }
 
-// widgetAtPath walks the config tree (through nested containers) to a widget.
 function widgetAtPath(path) {
     const col = state.config.pages[state.pageIndex].columns[path[0]];
     let widgets = (col && col.widgets) || [];
@@ -383,7 +358,6 @@ function addColumn(insertIndex) {
         toast(`This layout is full (max ${max} columns)`, "negative");
         return;
     }
-    // Keep the layout valid: at most 2 full columns, so fall back to small.
     const fullCount = page.columns.filter((c) => c.size === "full").length;
     const size = fullCount < 2 ? "full" : "small";
     save({ op: "addColumn", page: state.pageIndex, index: insertIndex, size });
@@ -406,8 +380,6 @@ function buildAddPageButton() {
     const nav = document.querySelector(".header .nav");
     if (!nav) return;
 
-    // A single sleek control group so page management reads as one intentional
-    // toolbar rather than three loose text links.
     const group = div("editor-ui editor-page-tools");
     group.append(
         pageToolButton("editor-add-page", iconPlus, "Add page", "Create a new page", openLayoutModal),
@@ -425,8 +397,6 @@ function pageToolButton(className, icon, label, title, onClick) {
     return btn;
 }
 
-// In edit mode, clicking the theme picker opens the styling editor instead of
-// switching the active preset. This is the entry point for editing styling.
 function setupStylingTrigger() {
     const picker = document.querySelector(".header .theme-picker");
     if (!picker) return;
@@ -442,12 +412,10 @@ function setupStylingTrigger() {
 function removeCurrentPage() {
     const page = state.config.pages[state.pageIndex];
     confirmAction(`Remove the page "${page.title}"? This cannot be undone.`, () => {
-        // Keep editing (flag stays set) and land on home once the server reloads.
         commitAndNavigate({ op: "removePage", page: state.pageIndex }, () => (location.href = `${PD.baseURL}/`));
     });
 }
 
-// openEditPageModal edits the current page's name, icon and page-level options.
 function openEditPageModal() {
     const page = state.config.pages[state.pageIndex];
     if (!page) return;
@@ -495,9 +463,6 @@ function openEditPageModal() {
     });
 }
 
-// savePageOptions commits the page edit, then reloads once the server hot-reloads so
-// the navigation and header (rendered outside the editor canvas) reflect the change.
-// The slug may have changed, so it navigates to the page's fresh slug.
 async function savePageOptions(fields) {
     const before = await serverGeneration();
     if (!(await commit({ op: "editPage", page: state.pageIndex, fields }))) return;
@@ -528,7 +493,6 @@ function openLayoutModal() {
     title.placeholder = "Page name";
 
     openModal("New page", [labeled("Name", title), body], () => {
-        // Navigate onto the new page in edit mode once the server has picked it up.
         const name = title.value.trim() || "New Page";
         commitAndNavigate({ op: "addPage", title: name, layout: chosen }, async () => {
             const cfg = await apiGet("/config").catch(() => null);
@@ -543,7 +507,6 @@ function openLayoutModal() {
 //
 
 function openNewWidgetModal(type, path) {
-    // Widgets dropped inside a container default to frameless (user can uncheck it).
     const initial = path.length >= 3 ? { frameless: "true" } : {};
     buildWidgetModal(type, initial, (fields, rawFields) =>
         save({ op: "addWidget", page: state.pageIndex, path, widgetType: type, fields, rawFields })
@@ -567,8 +530,8 @@ function buildWidgetModal(type, values, onSave) {
     const controls = [];
 
     for (const field of schema.fields) {
-        if (field.name === "widgets") continue; // container children are edited via nesting
-        if (field.name === "autocomplete") continue; // folded into autocomplete-provider below
+        if (field.name === "widgets") continue;
+        if (field.name === "autocomplete") continue;
 
         const control = field.name === "autocomplete-provider"
             ? renderAutocompleteProviderField(field, values["autocomplete-provider"], values["autocomplete"])
@@ -595,7 +558,6 @@ function buildWidgetModal(type, values, onSave) {
     });
 }
 
-// renderField builds a labeled input for a schema field and a reader for its value.
 function renderField(field, value) {
     if (field.kind === "checkbox") {
         const input = document.createElement("input");
@@ -619,7 +581,7 @@ function renderField(field, value) {
     } else if (field.kind === "select") {
         input = document.createElement("select");
         input.className = "editor-input";
-        input.append(new Option("-", "")); // allow leaving the field unset
+        input.append(new Option("-", ""));
         for (const opt of field.options || []) input.append(new Option(opt, opt));
         input.value = value || "";
         read = () => input.value || undefined;
@@ -645,7 +607,6 @@ function renderField(field, value) {
     return { field, wrapper, read };
 }
 
-// renderSearchEngineField adds a custom-URL input that shows only when "custom" is picked.
 function renderSearchEngineField(field, value) {
     const known = (field.options || []).filter((o) => o !== "custom");
     const isCustom = value && !known.includes(value);
@@ -669,8 +630,6 @@ function renderSearchEngineField(field, value) {
     return { field, wrapper, read: () => (select.value === "custom" ? customInput.value.trim() || undefined : select.value || undefined) };
 }
 
-// renderAutocompleteProviderField is renderSearchEngineField plus the "autocomplete"
-// bool: the "Off" option disables autocomplete rather than just clearing the provider.
 function renderAutocompleteProviderField(field, value, autocompleteValue) {
     const known = (field.options || []).filter((o) => o !== "custom");
     const isOff = autocompleteValue === "false" || autocompleteValue === false;
@@ -714,7 +673,6 @@ function iconPreview(input) {
     return preview;
 }
 
-// resolveIconURL mirrors the server's icon shorthand (si/di/mdi/sh) for a live preview.
 function resolveIconURL(value) {
     if (!value) return "";
     value = value.replace(/^auto-invert /, "");
@@ -731,15 +689,9 @@ function resolveIconURL(value) {
 }
 
 //
-// Styling modal: theme colors and branding, written to the top-level
-// theme:/branding: sections of the main config file.
+// Styling modal
 //
 
-// The styling modal edits either the base theme (the "Default" entry, which also
-// carries branding) or a named preset from theme.presets. A selector at the top
-// switches which theme is edited; the body is rebuilt for the chosen theme. Save
-// overwrites the selected theme, "Save as new" writes a new preset, and Delete
-// removes the selected preset.
 function openStylingModal() {
     if (state.config && state.config.mainWritable === false) {
         toast("The main config file is read only, styling cannot be saved", "negative");
@@ -747,15 +699,12 @@ function openStylingModal() {
     }
     const branding = (state.config && state.config.branding) || {};
     const presets = (state.config && state.config.themePresets) || [];
-    // selectedKey: "" => base theme (Default), otherwise a preset key.
     let selectedKey = "";
     let controls = [];
 
     const overlay = div("editor-ui editor-modal-overlay");
     const modal = div("editor-modal");
 
-    // Theme picker: swatch buttons like the header theme picker, one for the base
-    // theme ("Default") plus every preset. Selecting one edits it below.
     const themeEntries = [{ key: "", values: (state.config && state.config.theme) || {} }, ...presets.map((p) => ({ key: p.key, values: p.values || {} }))];
     const picker = div("editor-theme-picker");
     const choices = div("theme-choices");
@@ -781,27 +730,20 @@ function openStylingModal() {
     const bodyEl = div("editor-modal-body");
     modal.append(bodyEl);
 
-    // themeValuesFor returns the stored fields of the theme currently selected.
     const themeValuesFor = (key) =>
         key === "" ? (state.config && state.config.theme) || {} : (presets.find((p) => p.key === key) || {}).values || {};
 
-    // renderBody builds the fields for the selected theme. Branding fields only
-    // apply to the base theme, so presets show colors and theme options only.
     function renderBody(key) {
         bodyEl.innerHTML = "";
         controls = [];
         const isDefault = key === "";
         const theme = themeValuesFor(key);
 
-        // reg wires a control's read() for save. section = "theme" | "branding".
         const reg = (section, k, ctl) => {
             controls.push({ section, key: k, read: ctl.read });
             return ctl.wrapper;
         };
 
-        // For the base theme an unset color falls back to the live CSS variable so the
-        // pickers show what is on screen. For presets there is no meaningful live value,
-        // so unset colors stay empty and are not written into the preset.
         const eff = isDefault
             ? {
                   "background-color": resolveCssColor("--color-background"),
@@ -826,7 +768,6 @@ function openStylingModal() {
 
         if (!isDefault) return;
 
-        // Logo: logo-url overwrites the logo. The sync toggle mirrors it to the favicon.
         const logo = div("editor-fields");
         const logoURL = textField("Logo URL (overwrites logo)", branding["logo-url"], "/assets/logo.png");
         logo.append(reg("branding", "logo-url", logoURL));
@@ -850,7 +791,6 @@ function openStylingModal() {
         logo.append(reg("branding", "logo-text", textField("Logo text", branding["logo-text"], "G")));
         logo.append(reg("branding", "hide-logo", checkField("Hide logo", branding["hide-logo"])));
 
-        // App / PWA. app-background-color is a CSS color, kept as hex rather than HSL.
         const app = div("editor-fields");
         app.append(reg("branding", "app-name", textField("App name", branding["app-name"], "Dynacat")));
         app.append(reg("branding", "app-icon-url", textField("App icon URL", branding["app-icon-url"], "/assets/app-icon.svg")));
@@ -865,7 +805,6 @@ function openStylingModal() {
         bodyEl.append(collapsible("Logo & branding", logo), collapsible("App / PWA", app), collapsible("Footer & navigation", misc));
     }
 
-    // collect returns the current theme/branding field values from the live controls.
     const collect = () => {
         const themeOut = {};
         const brandingOut = {};
@@ -873,7 +812,6 @@ function openStylingModal() {
         return { themeOut, brandingOut };
     };
 
-    // Actions: Cancel | Delete (presets only) | Save as new | Save.
     const actions = div("editor-modal-actions");
     const cancel = button("Cancel", "editor-btn");
     const deleteBtn = button("", "editor-btn editor-btn-icon-danger");
@@ -906,7 +844,6 @@ function openStylingModal() {
 
     deleteBtn.addEventListener("click", () => {
         const key = selectedKey;
-        // The base theme has a built-in fallback, so deleting it resets to the default.
         const message = key === "" ? "Reset the default theme to the built-in default?" : `Delete the theme "${key}"?`;
         confirmAction(message, () => {
             overlay.remove();
@@ -914,7 +851,6 @@ function openStylingModal() {
         });
     });
 
-    // Delete is always available: presets are removed, the base theme is reset.
     const syncActions = () => {};
 
     actions.append(deleteBtn, cancel, saveAsNew, saveBtn);
@@ -933,9 +869,6 @@ function openStylingModal() {
     document.body.append(overlay);
 }
 
-// themeSwatch builds a theme-picker swatch button (background tile + primary/positive/
-// negative dots) from a theme's stored field values, mirroring theme-preset-preview.html.
-// Unset colors fall back to the same defaults the server template uses.
 function themeSwatch(values) {
     const btn = button("", "theme-preset");
     if (values["light"] === "true" || values["light"] === true) btn.classList.add("theme-preset-light");
@@ -952,9 +885,6 @@ function themeSwatch(values) {
     return btn;
 }
 
-// saveStyling commits the base theme + branding change, then reloads once the server
-// hot-reloads so the new theme CSS and branding (rendered outside the editor canvas)
-// take effect. The editing flag stays set, so edit mode is re-entered after reload.
 async function saveStyling(theme, branding) {
     const before = await serverGeneration();
     if (!(await commit({ op: "editStyling", theme, branding }))) return;
@@ -962,7 +892,6 @@ async function saveStyling(theme, branding) {
     location.reload();
 }
 
-// savePreset overwrites (or creates) theme.presets.<key> with the given theme fields.
 async function savePreset(key, theme) {
     const before = await serverGeneration();
     if (!(await commit({ op: "editStyling", presetKey: key, theme }))) return;
@@ -970,7 +899,6 @@ async function savePreset(key, theme) {
     location.reload();
 }
 
-// deletePreset removes theme.presets.<key>.
 async function deletePreset(key) {
     const before = await serverGeneration();
     if (!(await commit({ op: "deleteThemePreset", presetKey: key }))) return;
@@ -982,11 +910,6 @@ function sectionTitle(text) {
     return div("editor-section-title", text);
 }
 
-// colorField: native color picker + a text box accepting hex, rgb() or an HSL
-// triple. mode "hsl" reads back the yaml triple "H S L"; mode "hex" reads a hex string.
-// explicit is the value set in the config (undefined if unset); effective is the
-// current on-screen value used to prefill when unset. An unset color left untouched
-// reads back empty so the default is not written into the config.
 function colorField(label, explicit, effective, mode) {
     const normalize = (v) => (mode === "hex" ? colorToHex(v) || String(v || "").trim() : normalizeHsl(v));
 
@@ -1027,14 +950,12 @@ function colorField(label, explicit, effective, mode) {
             const t = text.value.trim();
             if (!t) return "";
             const out = normalize(t);
-            // Unset color the user did not change: leave it out so the default stays default.
             if (explicit === undefined && out === initial) return "";
             return out;
         },
     };
 }
 
-// normalizeHsl coerces any accepted color input to the yaml "H S L" triple.
 function normalizeHsl(value) {
     const t = String(value == null ? "" : value).trim();
     if (!t) return "";
@@ -1045,8 +966,6 @@ function normalizeHsl(value) {
     return colorToHslString(t) || t;
 }
 
-// resolveCssColor returns the current computed value of a CSS color variable as
-// an rgb() string (colorToHex/colorToHslString both parse it).
 function resolveCssColor(varName) {
     const probe = document.createElement("span");
     probe.style.cssText = `color: var(${varName}); display: none`;
@@ -1095,8 +1014,6 @@ function areaField(label, value) {
     return { wrapper: labeled(label, input), input, read: () => input.value.trim() };
 }
 
-// iconField is a text input with a live preview of the resolved icon (si/di/mdi/sh
-// shorthand or a URL), matching the widget icon field.
 function iconField(label, value, placeholder) {
     const input = inputEl("text");
     if (value) input.value = value;
@@ -1106,7 +1023,6 @@ function iconField(label, value, placeholder) {
     return { wrapper, input, read: () => input.value.trim() };
 }
 
-// selectField builds a dropdown. An empty-string option renders as "-" (unset).
 function selectField(label, value, options) {
     const input = document.createElement("select");
     input.className = "editor-input";
@@ -1116,8 +1032,7 @@ function selectField(label, value, options) {
 }
 
 //
-// Color conversions (hex <-> rgb <-> hsl). HSL uses the same "H S L" triple the
-// yaml theme config expects.
+// Color conversions
 //
 
 function colorToHex(value) {
@@ -1147,7 +1062,6 @@ function colorToHslString(value) {
     return t ? `${Math.round(t.h)} ${Math.round(t.s)} ${Math.round(t.l)}` : "";
 }
 
-// parseHslTriple accepts "43 50 70", "43,50,70" and "hsl(43, 50%, 70%)".
 function parseHslTriple(value) {
     const m = String(value == null ? "" : value).trim()
         .match(/^(?:hsla?\()?\s*([\d.]+)[\s,]+([\d.]+)%?[\s,]+([\d.]+)%?\s*\)?$/);
@@ -1232,7 +1146,6 @@ function openModal(title, sections, onSave) {
     modal.append(actions);
 
     overlay.append(modal);
-    // Only close on a real backdrop click, not when a text selection drag ends here.
     let pressedOnBackdrop = false;
     overlay.addEventListener("mousedown", (e) => (pressedOnBackdrop = e.target === overlay));
     overlay.addEventListener("click", (e) => {
@@ -1241,7 +1154,6 @@ function openModal(title, sections, onSave) {
     document.body.append(overlay);
 }
 
-// confirmAction shows a custom confirmation, falling back to the native dialog on mobile.
 function confirmAction(message, onConfirm) {
     if (window.matchMedia("(max-width: 768px)").matches) {
         if (confirm(message)) onConfirm();
@@ -1271,9 +1183,6 @@ function confirmAction(message, onConfirm) {
     document.body.append(overlay);
 }
 
-// promptModal asks for a single line of text in the app's modal style, replacing the
-// native prompt(). onSubmit receives the trimmed value; returning false keeps the modal
-// open (e.g. on a validation error), any other value closes it.
 function promptModal(title, placeholder, onSubmit) {
     const overlay = div("editor-ui editor-modal-overlay");
     const modal = div("editor-modal editor-confirm");
@@ -1350,7 +1259,6 @@ function img(className, src) {
     return el;
 }
 
-// maskIcon renders a monochrome icon as a CSS mask so it tints to the theme color.
 function maskIcon(className, url) {
     const el = div(className);
     el.style.setProperty("--icon-url", `url("${url}")`);

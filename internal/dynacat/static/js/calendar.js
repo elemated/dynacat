@@ -30,8 +30,6 @@ const [datesEntranceLeft, datesEntranceRight] = directions(
 
 const undoEntrance = slideFade({ direction: "left", distance: "100%", duration: 300 });
 
-// MDI icon paths (mdi:monitor, mdi:disc, mdi:movie-open-outline, mdi:television-classic)
-// shown left of a release title so the release kind is obvious at a glance.
 const releaseTypes = {
     digital: {
         label: "Digital release",
@@ -52,9 +50,6 @@ const releaseTypes = {
 };
 
 export default function(element) {
-    // Guard against double-initialization: a built calendar still carries the
-    // "calendar" class, so if setup runs again it must not rebuild it (which would
-    // create a second instance and replay the month animation).
     if (element.querySelector(".calendar-dates")) return;
 
     const widgetElement = element.closest("[data-widget-id]");
@@ -73,9 +68,6 @@ export default function(element) {
     ));
 }
 
-// aggregateReleaseState collapses a day's releases into a single availability
-// status for the underline color. A day flags "released" (something out but not
-// yet available) over "upcoming" over "available" (everything on disk).
 function aggregateReleaseState(items) {
     let hasReleased = false, hasUpcoming = false;
     for (const item of items) {
@@ -87,8 +79,6 @@ function aggregateReleaseState(items) {
     return "available";
 }
 
-// Releases manages fetching + caching per-month Sonarr/Radarr release data and
-// rendering it as markers/popovers inside the calendar day cells.
 function Releases(widgetId, intervalMs) {
     const base = (typeof pageData !== "undefined" && pageData.baseURL) || "";
     const cache = new Map();
@@ -166,8 +156,6 @@ function Calendar(firstDay, releases, showReleaseState) {
     update(now);
     autoAdvanceNow();
 
-    // Only poll for live updates when the page has dynamic updates enabled, matching
-    // SSE/widget polling. The initial fetch above still runs so markers show either way.
     const dynamicUpdatesEnabled = typeof pageData !== "undefined" && pageData.dynamicUpdateEnabled;
     if (releases && releases.intervalMs > 0 && dynamicUpdatesEnabled) {
         releaseTicker = setInterval(() => loadReleases(activeDate, true), releases.intervalMs);
@@ -237,8 +225,6 @@ function Header(nextClicked, prevClicked, undoClicked) {
 function Dates(firstDay, releases, showReleaseState) {
     let dates, lastRenderedDate, animating = false;
 
-    // applyMarkers (re)draws release indicators + popovers onto the day cells for
-    // the given month using whatever release data is currently cached.
     const applyMarkers = function(newDate) {
         if (!releases) return;
 
@@ -255,8 +241,6 @@ function Dates(firstDay, releases, showReleaseState) {
             if (existing) existing.remove();
 
             const cellDate = new Date(firstCellDate.getFullYear(), firstCellDate.getMonth(), firstCellDate.getDate() + i);
-            // Skip spill-over cells from adjacent months so a release only appears
-            // under its own month, never under a neighbouring month's grid.
             if (cellDate.getMonth() !== newDate.getMonth() || cellDate.getFullYear() !== newDate.getFullYear()) {
                 continue;
             }
@@ -304,15 +288,11 @@ function Dates(firstDay, releases, showReleaseState) {
 
         lastRenderedDate = newDate;
 
-        // Day numbers are set via .text() which wipes any previously appended
-        // markers, so re-apply them after rendering the grid.
+        // .text() wipes appended markers, so re-apply after rendering the grid.
         applyMarkers(newDate);
     };
 
     const update = function(now, newDate) {
-        // Same month (or first render), or a transition is already running: apply the
-        // new month straight away. Starting a second slide over an in-flight one is
-        // what made the refresh animation occasionally play twice.
         if (lastRenderedDate === undefined || datesWithinSameMonth(newDate, lastRenderedDate) || animating) {
             updateFullMonth(now, newDate);
             return;
@@ -394,13 +374,8 @@ function releaseCard(item) {
         const spinner = elem().classes("calendar-thumb-spinner");
         const img = elem("img").classes("thumbnail").attrs({ src: item.thumbnail, loading: "lazy", alt: "" });
 
-        // These images live inside a hidden popover subtree and are built after the
-        // page's global lazy-image pass, so drive the reveal + spinner ourselves:
-        // fade the poster in (via the .loaded/.cached classes the lazy CSS keys off)
-        // and drop the spinner once the image resolves.
         const reveal = (cls) => { img.classes(cls); spinner.hide(); };
         img.on("load", () => reveal("loaded")).on("error", () => spinner.hide());
-        // A browser-cached image can already be complete before listeners attach.
         if (img.complete) img.naturalWidth > 0 ? reveal("cached") : spinner.hide();
 
         card.append(

@@ -28,9 +28,8 @@ type latestMediaWidget struct {
 	ShowOverlayEnabled bool `yaml:"-"`
 	EffectiveColumns   int  `yaml:"-"`
 
-	mu    sync.RWMutex
-	Items []latestMediaItem
-	// Track which hosts allow insecure connections for image caching
+	mu                sync.RWMutex
+	Items             []latestMediaItem
 	hostAllowInsecure map[string]bool `yaml:"-"`
 }
 
@@ -169,17 +168,14 @@ func (widget *latestMediaWidget) update(ctx context.Context) {
 		allItems = append(allItems, result.items...)
 	}
 
-	// Sort by date added, newest first
 	sort.Slice(allItems, func(i, j int) bool {
 		return allItems[i].AddedAt.After(allItems[j].AddedAt)
 	})
 
-	// Trim to item count
 	if len(allItems) > widget.ItemCount {
 		allItems = allItems[:widget.ItemCount]
 	}
 
-	// Format relative time and duration
 	now := time.Now()
 	for i := range allItems {
 		allItems[i].TimeAgo = formatTimeAgo(allItems[i].AddedAt, now)
@@ -192,7 +188,6 @@ func (widget *latestMediaWidget) update(ctx context.Context) {
 	widget.Items = allItems
 	widget.mu.Unlock()
 
-	// Cache image URLs with the appropriate insecure setting
 	widget.cacheImageURLs()
 
 	var err error
@@ -260,7 +255,6 @@ func (widget *latestMediaWidget) fetchPlexLatest(ctx context.Context, host *late
 	client := ternary(host.AllowInsecure, defaultInsecureHTTPClient, defaultHTTPClient)
 	baseURL := strings.TrimRight(host.BaseURL, "/")
 
-	// Fetch machine identifier for deep links
 	var machineID string
 	identityURL := fmt.Sprintf("%s/identity", baseURL)
 	identityReq, err := http.NewRequestWithContext(ctx, "GET", identityURL, nil)
@@ -275,7 +269,6 @@ func (widget *latestMediaWidget) fetchPlexLatest(ctx context.Context, host *late
 		}
 	}
 
-	// Fetch sections
 	sectionsURL := fmt.Sprintf("%s/library/sections", baseURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", sectionsURL, nil)
 	if err != nil {
@@ -292,12 +285,10 @@ func (widget *latestMediaWidget) fetchPlexLatest(ctx context.Context, host *late
 	var items []latestMediaItem
 
 	for _, section := range sectionsResp.MediaContainer.Directory {
-		// Skip non-video Plex libraries so latest-media only shows video additions.
 		if strings.EqualFold(section.Type, "artist") || strings.EqualFold(section.Type, "photo") {
 			continue
 		}
 
-		// Filter by library names if specified
 		if len(host.Libraries) > 0 && !containsString(host.Libraries, section.Title) {
 			continue
 		}
@@ -319,7 +310,6 @@ func (widget *latestMediaWidget) fetchPlexLatest(ctx context.Context, host *late
 		}
 
 		for _, meta := range resp.MediaContainer.Metadata {
-			// Hard filter out Plex photo items, regardless of library filtering config.
 			if strings.EqualFold(meta.Type, "photo") || strings.EqualFold(meta.Type, "photoalbum") {
 				continue
 			}
@@ -407,7 +397,6 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatest(ctx context.Context, ho
 	client := ternary(host.AllowInsecure, defaultInsecureHTTPClient, defaultHTTPClient)
 	baseURL := strings.TrimRight(host.BaseURL, "/")
 
-	// Get first user ID (admin/first user)
 	usersURL := fmt.Sprintf("%s/Users?api_key=%s", baseURL, host.Token)
 	req, err := http.NewRequestWithContext(ctx, "GET", usersURL, nil)
 	if err != nil {
@@ -424,12 +413,10 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatest(ctx context.Context, ho
 	}
 	userID := users[0].Id
 
-	// If no library filter, fetch latest from all
 	if len(host.Libraries) == 0 {
 		return widget.fetchJellyfinEmbyLatestFromParent(ctx, client, host, serverType, baseURL, userID, "")
 	}
 
-	// Fetch user views to find library IDs
 	viewsURL := fmt.Sprintf("%s/UserViews?api_key=%s&userId=%s", baseURL, host.Token, userID)
 	req, err = http.NewRequestWithContext(ctx, "GET", viewsURL, nil)
 	if err != nil {
@@ -507,8 +494,7 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatestFromParent(
 		}
 
 		if raw.Id != "" {
-			// For episodes use the parent series' images so the poster (not the
-			// episode still, which looks like "episode one") is shown.
+			// Use the series' images for episodes so the poster shows instead of the episode still.
 			imageID := raw.Id
 			if strings.EqualFold(raw.Type, "episode") && raw.SeriesId != "" {
 				imageID = raw.SeriesId
@@ -527,15 +513,12 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatestFromParent(
 
 // --- Helpers ---
 
-// stripAPIKeysFromError removes sensitive API keys from error messages
 func stripAPIKeysFromError(err error) string {
 	if err == nil {
 		return ""
 	}
 	errStr := err.Error()
-	// Strip api_key parameter from URLs
 	errStr = regexp.MustCompile(`api_key=[^&\s"']+`).ReplaceAllString(errStr, "api_key=***")
-	// Strip X-Plex-Token from URLs (if it appears in the error)
 	errStr = regexp.MustCompile(`X-Plex-Token=[^&\s"']+`).ReplaceAllString(errStr, "X-Plex-Token=***")
 	return errStr
 }
@@ -613,64 +596,36 @@ func (widget *latestMediaWidget) cacheImageURLs() {
 		item := &widget.Items[i]
 		allowInsecure := widget.hostAllowInsecure[item.ServerURL]
 
-		// Process cover URL
 		if item.CoverURL != "" {
-			originalURL := item.CoverURL
-			hash := hashString(originalURL)
-
-			// Register with the application's image proxy
-			if widget.Providers != nil && widget.Providers.app != nil {
-				widget.Providers.app.registerImageProxy(hash, originalURL, allowInsecure)
-			}
-
-			// Try to cache the image
-			if widget.Providers != nil && widget.Providers.imageCache != nil {
-				cachedURL, err := widget.Providers.imageCache.CacheURLWithClient(ctx, originalURL, allowInsecure)
-				if err == nil && cachedURL != "" {
-					// Successfully cached, use the cached URL
-					item.CoverURL = cachedURL
-				} else {
-					// Failed to cache, use a proxy URL that doesn't expose the API key
-					item.CoverURL = fmt.Sprintf("/api/image-proxy/%s", hash)
-					if err != nil {
-						slog.Debug("failed to cache cover image, using proxy", "hash", hash, "error", stripAPIKeysFromError(err))
-					}
-				}
-			} else {
-				// No cache available, use proxy URL
-				item.CoverURL = fmt.Sprintf("/api/image-proxy/%s", hash)
-			}
+			item.CoverURL = widget.resolveCachedImageURL(ctx, item.CoverURL, allowInsecure, "cover")
 		}
-
-		// Process thumbnail URL
 		if item.ThumbnailURL != "" {
-			originalURL := item.ThumbnailURL
-			hash := hashString(originalURL)
-
-			// Register with the application's image proxy
-			if widget.Providers != nil && widget.Providers.app != nil {
-				widget.Providers.app.registerImageProxy(hash, originalURL, allowInsecure)
-			}
-
-			// Try to cache the image
-			if widget.Providers != nil && widget.Providers.imageCache != nil {
-				cachedURL, err := widget.Providers.imageCache.CacheURLWithClient(ctx, originalURL, allowInsecure)
-				if err == nil && cachedURL != "" {
-					// Successfully cached, use the cached URL
-					item.ThumbnailURL = cachedURL
-				} else {
-					// Failed to cache, use a proxy URL that doesn't expose the API key
-					item.ThumbnailURL = fmt.Sprintf("/api/image-proxy/%s", hash)
-					if err != nil {
-						slog.Debug("failed to cache thumbnail image, using proxy", "hash", hash, "error", stripAPIKeysFromError(err))
-					}
-				}
-			} else {
-				// No cache available, use proxy URL
-				item.ThumbnailURL = fmt.Sprintf("/api/image-proxy/%s", hash)
-			}
+			item.ThumbnailURL = widget.resolveCachedImageURL(ctx, item.ThumbnailURL, allowInsecure, "thumbnail")
 		}
 	}
+}
+
+func (widget *latestMediaWidget) resolveCachedImageURL(ctx context.Context, originalURL string, allowInsecure bool, kind string) string {
+	hash := hashString(originalURL)
+	proxyURL := fmt.Sprintf("/api/image-proxy/%s", hash)
+
+	if widget.Providers != nil && widget.Providers.app != nil {
+		widget.Providers.app.registerImageProxy(hash, originalURL, allowInsecure)
+	}
+
+	if widget.Providers == nil || widget.Providers.imageCache == nil {
+		return proxyURL
+	}
+
+	cachedURL, err := widget.Providers.imageCache.CacheURLWithClient(ctx, originalURL, allowInsecure)
+	if err == nil && cachedURL != "" {
+		return cachedURL
+	}
+
+	if err != nil {
+		slog.Debug(fmt.Sprintf("failed to cache %s image, using proxy", kind), "hash", hash, "error", stripAPIKeysFromError(err))
+	}
+	return proxyURL
 }
 
 func (widget *latestMediaWidget) Render() template.HTML {

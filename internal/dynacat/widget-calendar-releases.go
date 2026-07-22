@@ -12,9 +12,6 @@ import (
 
 const calendarReleaseDateLayout = "2006-01-02"
 
-// parseCalendarReleaseURL splits a "serverType:url" value (e.g.
-// "radarr:https://radarr.domain.com") into its service type and normalized base
-// URL, mirroring the host URL parsing used by the latest-media/playing widgets.
 func parseCalendarReleaseURL(rawURL string) (serverType string, baseURL string, err error) {
 	parts := strings.SplitN(rawURL, ":", 2)
 	if len(parts) < 2 {
@@ -45,9 +42,6 @@ type arrImage struct {
 	URL       string `json:"url"`
 }
 
-// calendarReleaseState classifies a release for the day-underline coloring:
-// "available" when it is already on disk, "released" when its date has passed but
-// it is not yet available, and "upcoming" when the date is still in the future.
 func calendarReleaseState(dateISO string, hasFile bool, todayISO string) string {
 	if hasFile {
 		return "available"
@@ -98,8 +92,6 @@ type radarrCalendarMovie struct {
 	Images          []arrImage `json:"images"`
 }
 
-// getReleasesForMonth returns release items keyed by ISO date for the given
-// month, serving from the per-month server cache when it is still fresh.
 func (widget *calendarWidget) getReleasesForMonth(ctx context.Context, year int, month time.Month) map[string][]calendarReleaseItem {
 	key := fmt.Sprintf("%04d-%02d", year, month)
 
@@ -110,16 +102,12 @@ func (widget *calendarWidget) getReleasesForMonth(ctx context.Context, year int,
 	}
 	widget.releaseCacheMu.Unlock()
 
-	// Pad the range so spillover days shown in the grid also get markers.
 	monthStart := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
 	monthEnd := monthStart.AddDate(0, 1, -1)
 	start := monthStart.AddDate(0, 0, -7)
 	end := monthEnd.AddDate(0, 0, 7)
 
 	data := make(map[string][]calendarReleaseItem)
-
-	// Track which releases have already been added so the same movie/episode
-	// served by multiple hosts of the same type is not shown twice.
 	seen := make(map[string]struct{})
 
 	for i := range widget.Hosts {
@@ -141,12 +129,6 @@ func (widget *calendarWidget) getReleasesForMonth(ctx context.Context, year int,
 					seen[seenKey] = struct{}{}
 				}
 
-				// Route posters through the app image proxy so browsers load them
-				// from us (long-cached, proper user-agent, no exposed api key)
-				// instead of hitting the external source directly. Registration is
-				// non-blocking - the image itself is fetched lazily when the browser
-				// requests it, so the release data still returns immediately and the
-				// day markers appear as soon as the month is pulled.
 				if widget.Providers != nil && widget.Providers.app != nil && item.Thumbnail != "" {
 					hash := hashString(item.Thumbnail)
 					widget.Providers.app.registerImageProxy(hash, item.Thumbnail, service.AllowInsecure)
@@ -215,9 +197,6 @@ func fetchSonarrReleases(ctx context.Context, service *calendarReleaseService, s
 		return nil, err
 	}
 
-	// Group episodes by day + series + season so a show dropping several episodes
-	// (or a whole season) on the same day collapses into one marker/card instead
-	// of one per episode.
 	type sonarrGroupKey struct {
 		date    string
 		groupID string
@@ -225,7 +204,7 @@ func fetchSonarrReleases(ctx context.Context, service *calendarReleaseService, s
 	}
 
 	groups := make(map[sonarrGroupKey][]sonarrCalendarEpisode)
-	order := make(map[string][]sonarrGroupKey) // preserve first-seen order per date
+	order := make(map[string][]sonarrGroupKey)
 
 	for _, episode := range episodes {
 		date := arrParseDate(episode.AirDateUtc)
@@ -253,7 +232,6 @@ func fetchSonarrReleases(ctx context.Context, service *calendarReleaseService, s
 			eps := groups[key]
 			first := eps[0]
 
-			// A grouped release counts as available only when every episode is on disk.
 			hasFile := true
 			for _, ep := range eps {
 				if !ep.HasFile {
@@ -335,8 +313,6 @@ func fetchRadarrReleases(ctx context.Context, service *calendarReleaseService, s
 
 		poster := arrPosterURL(movie.Images)
 
-		// Emit a separate entry for each release date the movie has, so a title can
-		// appear on its cinema, physical and digital dates - each with its own icon.
 		for _, candidate := range []struct{ releaseType, raw string }{
 			{"cinema", movie.InCinemas},
 			{"physical", movie.PhysicalRelease},
@@ -367,8 +343,6 @@ func fetchRadarrReleases(ctx context.Context, service *calendarReleaseService, s
 	return result, nil
 }
 
-// arrParseDate extracts the ISO date (YYYY-MM-DD) from an arr API timestamp,
-// returning "" when the value is empty or unparseable.
 func arrParseDate(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -379,7 +353,6 @@ func arrParseDate(value string) string {
 		return parsed.Format(calendarReleaseDateLayout)
 	}
 
-	// Fall back to a bare date if the API returned one.
 	if len(value) >= len(calendarReleaseDateLayout) {
 		if _, err := time.Parse(calendarReleaseDateLayout, value[:len(calendarReleaseDateLayout)]); err == nil {
 			return value[:len(calendarReleaseDateLayout)]

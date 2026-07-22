@@ -81,7 +81,6 @@ func (widget *dynawidgetsWidget) initialize() error {
 		widget.Title = title
 	}
 
-	// Apply required defaults if user hasn't specified them
 	if required != nil {
 		if required.URL != "" {
 			if widget.CustomAPIRequest == nil {
@@ -92,9 +91,6 @@ func (widget *dynawidgetsWidget) initialize() error {
 			}
 		}
 
-		// Merge subrequests declared in the template's required section.
-		// User config takes precedence; a template default only fills a
-		// subrequest the user hasn't defined, or an empty URL on one they have.
 		for key, req := range required.Subrequests {
 			if req == nil {
 				continue
@@ -173,9 +169,6 @@ func (widget *dynawidgetsWidget) Render() template.HTML {
 	return widget.renderTemplate(widget, customAPIWidgetTemplate)
 }
 
-// dynawidgetsParseTemplate splits a template file into the template content
-// and the required section. The required section starts with "required: |"
-// on its own line at the bottom of the file.
 func dynawidgetsParseTemplate(raw string) (templateContent string, required *dynawidgetsRequired) {
 	const separator = "required: |"
 
@@ -207,8 +200,6 @@ func dynawidgetsParseTemplate(raw string) (templateContent string, required *dyn
 	return templateContent, required
 }
 
-// dedentYAMLBlock strips the common leading indentation from the "required: |"
-// block, keeping nested keys aligned.
 func dedentYAMLBlock(raw string) string {
 	lines := strings.Split(raw, "\n")
 
@@ -238,9 +229,6 @@ func dedentYAMLBlock(raw string) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
-// dynawidgetsResolveTemplate checks for a cached template on disk, or fetches
-// it from the dynawidgets repository. Returns the template content, the
-// widget title (empty if loaded from cache), and parsed required config.
 func dynawidgetsResolveTemplate(slug string, repo string) (templateContent string, title string, required *dynawidgetsRequired, err error) {
 	if !dynawidgetsSlugPattern.MatchString(slug) {
 		return "", "", nil, fmt.Errorf("invalid slug %q", slug)
@@ -252,14 +240,12 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 		}
 	}
 
-	// Check if template already exists on disk
 	if data, readErr := os.ReadFile(templatePath); readErr == nil {
 		slog.Info("Using cached dynawidget template", "slug", slug, "path", templatePath)
 		content, req := dynawidgetsParseTemplate(string(data))
 		return content, "", req, nil
 	}
 
-	// Fetch the list index for the first letter of the slug
 	firstLetter := string(slug[0])
 	baseURL := fmt.Sprintf("https://raw.githubusercontent.com/Panonim/dynawidgets/refs/heads/%s", repo)
 	listURL := fmt.Sprintf("%s/database/list-%s.json", baseURL, firstLetter)
@@ -281,7 +267,6 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 		return "", "", nil, fmt.Errorf("decoding widget list: %w", err)
 	}
 
-	// Find the matching slug
 	var entry *dynawidgetsListEntry
 	for i := range entries {
 		if entries[i].Slug == slug {
@@ -294,10 +279,8 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 		return "", "", nil, fmt.Errorf("widget %q not found in dynawidgets list", slug)
 	}
 
-	// Fetch the template content
 	templateURL := entry.Template
 	if repo != dynawidgetsDefaultRepo {
-		// entry.Template points to the default branch; rewrite to the requested repo
 		templateURL = strings.Replace(
 			entry.Template,
 			"/refs/heads/"+dynawidgetsDefaultRepo+"/",
@@ -336,7 +319,6 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 
 	rawContent := string(bodyBytes)
 
-	// Save to disk for future use
 	if err := os.MkdirAll(dynawidgetsAssetsDir, 0755); err != nil {
 		slog.Error("Failed to create dynawidgets assets directory", "error", err)
 	} else if err := os.WriteFile(templatePath, bodyBytes, 0600); err != nil {

@@ -95,7 +95,7 @@ details[open] .summary::after {
     rotate: -90deg;
 }
 
-/* TODO: refactor, otherwise I hope I never have to change dynamic columns again */
+/* TODO: refactor dynamic columns */
 .dynamic-columns {
     --list-half-gap: 0.5rem;
     gap: var(--widget-content-vertical-padding) var(--widget-content-horizontal-padding);
@@ -315,7 +315,7 @@ details[open] .summary::after {
 
 .expand-toggle-button.container-expanded {
     position: sticky;
-    /* -1px to hide 1px gap on chrome */
+    /* chrome gap fix */
     bottom: -1px;
 }
 
@@ -403,7 +403,6 @@ details[open] .summary::after {
     gap: 2px;
     padding: 2px;
     height: 1.5rem;
-    /* naughty, but oh so beautiful */
     margin-inline: -3px;
 }
 
@@ -472,7 +471,6 @@ details[open] .summary::after {
     scrollbar-width: none;
 }
 
-/* Hide on Safari and Chrome */
 .hide-scrollbars::-webkit-scrollbar {
     display: none;
 }

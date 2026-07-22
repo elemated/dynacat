@@ -1,4 +1,3 @@
-
 import { clamp } from "./utils.js";
 
 export function setupMasonries() {
@@ -27,10 +26,10 @@ export function setupMasonries() {
 
             if (columnsCount === previousColumnsCount) {
                 return;
-            } else {
-                container.textContent = "";
-                previousColumnsCount = columnsCount;
             }
+
+            container.textContent = "";
+            previousColumnsCount = columnsCount;
 
             const columnsFragment = document.createDocumentFragment();
 

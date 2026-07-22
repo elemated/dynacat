@@ -43,7 +43,7 @@ type application struct {
 	Version    string
 	CreatedAt  time.Time
 	Config     config
-	configPath string // main config file path, used by the editor to write back
+	configPath string
 
 	parsedManifest []byte
 
@@ -93,10 +93,6 @@ func newApplication(c *config) (*application, error) {
 		searchAutocompleteURLs: make(map[uint64]string),
 	}
 	config := &app.Config
-
-	//
-	// Init auth
-	//
 
 	hasAnyAuth := len(config.Auth.Users) > 0 || config.Auth.OIDC != nil
 	if hasAnyAuth {
@@ -157,10 +153,6 @@ func newApplication(c *config) (*application, error) {
 		app.oidcSessions = newSessionStore()
 		app.OIDCEnabled = true
 	}
-
-	//
-	// Init themes
-	//
 
 	if !config.Theme.DisablePicker {
 		themeKeys := make([]string, 0, 2)
@@ -239,10 +231,6 @@ func newApplication(c *config) (*application, error) {
 		config.Server.trustedProxyNets = append(config.Server.trustedProxyNets, ipnet)
 	}
 
-	//
-	// Init pages
-	//
-
 	app.slugToPage[""] = &config.Pages[0]
 
 	dynamicUpdateEnabled := true
@@ -278,8 +266,6 @@ func newApplication(c *config) (*application, error) {
 			return nil, fmt.Errorf("page slug \"%s\" is reserved", page.Slug)
 		}
 
-		// Ensure slugs stay unique so duplicate page names don't collide in
-		// routing or the UI editor. Append -2, -3, ... on collision.
 		baseSlug := page.Slug
 		for i := 2; ; i++ {
 			if _, taken := usedSlugs[page.Slug]; !taken {
@@ -398,10 +384,6 @@ func newApplication(c *config) (*application, error) {
 		return nil, fmt.Errorf("parsing manifest.json: %v", err)
 	}
 	app.parsedManifest = []byte(manifest)
-
-	//
-	// Init todo storage
-	//
 
 	needsTodoDB := false
 	for p := range config.Pages {
@@ -522,8 +504,6 @@ func getMinUpdateIntervalForWidgets(ws widgets) (time.Duration, bool) {
 		widgetFound := false
 
 		if cw, ok := w.(*customAPIWidget); ok {
-			// Only include custom-api widgets in global polling if they don't have update-interval set
-			// Widgets with update-interval will poll independently on the client side
 			if cw.UpdateInterval == nil {
 				widgetFound = true
 				interval = 1 * time.Second
@@ -587,7 +567,6 @@ func (a *application) getAccessiblePages(user *authenticatedUser) []*page {
 	for i := range a.Config.Pages {
 		p := &a.Config.Pages[i]
 		if user == nil {
-			// Unauthenticated: only pages with no restrictions (when RequireAuth is false)
 			if len(p.AllowedUsers) == 0 && len(p.AllowedGroups) == 0 {
 				pages = append(pages, p)
 			}
@@ -655,8 +634,6 @@ func (a *application) handlePageContentRequest(w http.ResponseWriter, r *http.Re
 		page.mu.Lock()
 		defer page.mu.Unlock()
 
-		// Determine cache-build status after widgets have had a chance to queue
-		// image fetches to avoid missing the initial "building cache" response.
 		page.updateOutdatedWidgets()
 		if a.imageCache != nil {
 			isCacheBuilding = a.imageCache.IsBuildingCache()
@@ -692,7 +669,6 @@ func (a *application) addressOfRequest(r *http.Request) string {
 	remote := remoteAddrWithoutPort()
 	trustedNets := a.Config.Server.trustedProxyNets
 
-	// Without a trusted-proxies allow-list, honoring XFF would let clients spoof.
 	if len(trustedNets) == 0 {
 		return remote
 	}
@@ -720,7 +696,6 @@ func (a *application) addressOfRequest(r *http.Request) string {
 	}
 
 	ips := strings.Split(forwardedFor, ",")
-	// Walk right-to-left, skipping trusted proxies; return the first untrusted hop.
 	for i := len(ips) - 1; i >= 0; i-- {
 		candidate := strings.TrimSpace(ips[i])
 		if candidate == "" {
@@ -818,7 +793,7 @@ func (a *application) VersionedAssetPath(asset string) string {
 		"?v=" + strconv.FormatInt(a.CreatedAt.Unix(), 10)
 }
 
-const todoMaxBodyBytes = 1 << 20 // 1 MiB
+const todoMaxBodyBytes = 1 << 20
 
 func (a *application) authorizeTodoRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
 	listID := r.PathValue("listID")

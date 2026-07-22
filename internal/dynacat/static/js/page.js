@@ -107,7 +107,6 @@ let keybindState = { pressedKeys: [], chordTimeout: null };
 function normalizedEventKey(event) {
     const key = event.key.toLowerCase();
     if (/^[a-z0-9]$/.test(key)) return key;
-    // Use physical key codes so existing binds still work on non-English keyboard layouts
     if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase();
     if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
     return "";
@@ -255,8 +254,6 @@ function setupSearchBoxes() {
             }
 
             if (event.key == "Enter") {
-                // Prevent the form submit event from firing a second search after
-                // keydown already handled submission.
                 event.preventDefault();
                 const openInNewTab = newTab && !event.ctrlKey || !newTab && event.ctrlKey;
                 submitSearch(openInNewTab);
@@ -319,7 +316,7 @@ function setupSearchBoxes() {
         document.addEventListener("keydown", (event) => {
             if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
             if (event.code != "KeyS") return;
-            if (keybindState.pressedKeys.length > 0) return; // Don't trigger search if in chord
+            if (keybindState.pressedKeys.length > 0) return;
 
             inputElement.focus();
             event.preventDefault();
@@ -329,15 +326,12 @@ function setupSearchBoxes() {
             requestAnimationFrame(() => inputElement.focus());
         });
 
-        // Handle autofocus for dynamically loaded content
         if (inputElement.hasAttribute("autofocus")) {
-            // Use requestAnimationFrame to ensure DOM is fully ready
             requestAnimationFrame(() => {
                 inputElement.focus();
             });
         }
 
-        // Search Autocomplete + bookmark matching
         if (widget.dataset.autocomplete === "true" || widget.dataset.bookmarksEnabled === "true") {
             const autocompleteEnabled = widget.dataset.autocomplete === "true";
             const bookmarksEnabled = widget.dataset.bookmarksEnabled === "true";
@@ -379,7 +373,6 @@ function setupSearchBoxes() {
                     autocompleteEl.style.maxHeight = Math.min(maxH, spaceBelow - 4) + "px";
                 }
 
-                // Sync direction classes every reposition so the initial below state gets its borders too.
                 autocompleteEl.classList.toggle("search-autocomplete-above", goAbove);
                 widget.classList.toggle("search-suggestions-above", goAbove);
                 widget.classList.toggle("search-suggestions-below", !goAbove);
@@ -546,8 +539,6 @@ function setupSearchBoxes() {
                 }
             });
 
-            // Delay hide to survive spurious blur (Chrome scroll-on-focus); close only
-            // if focus really left the input.
             inputElement.addEventListener("blur", () => {
                 setTimeout(() => {
                     if (document.activeElement !== inputElement) {
@@ -560,7 +551,6 @@ function setupSearchBoxes() {
 }
 
 function setupDynamicRelativeTime() {
-    // Always do an immediate update pass (new elements may have arrived)
     updateRelativeTimeForElements(document.querySelectorAll("[data-dynamic-relative-time]"));
 
     if (dynamicRelativeTimeInitialized) return;
@@ -745,12 +735,10 @@ function setupLazyImages() {
                 };
 
                 if (image.complete) {
-                    // Check if the image loaded successfully
                     if (image.naturalHeight > 0) {
                         image.classList.add("cached");
                         setTimeout(() => imageFinishedTransition(image), 1);
                     } else {
-                        // Image failed to load, try fallback
                         handleError();
                     }
                 } else {
@@ -1187,8 +1175,6 @@ function setupClocks() {
 }
 
 async function setupCalendars() {
-    // Snapshot the collection: a built calendar keeps the "calendar" class, so a
-    // live collection (and any re-entry of setup) could re-process it.
     const elems = Array.from(document.getElementsByClassName("calendar"));
     if (elems.length == 0) return;
 
@@ -1236,8 +1222,6 @@ function setupTruncatedElementTitles() {
 
 const THEME_STORAGE_KEY = "dynacat-theme";
 
-// Mirror the active theme to localStorage so reloads survive a lost cookie and
-// other tabs can pick the change up via the storage event.
 function persistTheme(key, css, scheme) {
     try {
         localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify({ key: key, css: css, scheme: scheme }));
@@ -1325,7 +1309,6 @@ function initThemePicker() {
         });
     })
 
-    // Live sync when the theme is changed in another tab.
     window.addEventListener("storage", (e) => {
         if (e.key !== THEME_STORAGE_KEY || !e.newValue) return;
 
@@ -1396,8 +1379,6 @@ async function setupPage() {
 
     initThemePicker();
 
-    // If the early restore swapped in a theme the server did not have a cookie
-    // for, re-POST it so the server cookie is rewritten and stays in sync.
     if (pageData.serverTheme !== undefined && pageData.serverTheme !== pageData.theme) {
         fetch(`${pageData.baseURL}/api/set-theme/${pageData.theme}`, { method: "POST" }).catch(() => {});
     }
@@ -1514,7 +1495,7 @@ async function updateWidget(widgetElement) {
         }
 
         syncWidgetUpdateInterval(widgetElement, newWidget);
-}
+    }
 
     if (newWidget && widgetElement.outerHTML !== newWidget.outerHTML) {
         const oldContent = widgetElement.querySelector('.widget-content');
@@ -1603,10 +1584,6 @@ function updateContentPreservingImages(oldContent, newContent) {
     oldContent.replaceWith(newContent);
 }
 
-// syncWidgetUpdateInterval keeps the polling cadence in step with a widget that
-// reports a dynamic data-update-interval (e.g. speedtest polls fast while testing,
-// then slows down once the result is in). updateWidget only swaps inner content, so
-// the root attribute and the polling state need to be reconciled explicitly.
 function syncWidgetUpdateInterval(widgetElement, newWidget) {
     const newInterval = newWidget.dataset.updateInterval;
 
@@ -1679,7 +1656,6 @@ function remainingDelayMs(intervalMs, lastRunAt) {
 const widgetPollingStates = new Map();
 let widgetPollingVisibilityListenerInitialized = false;
 
-// Local playing progress updaters keyed by widget element
 const playingUpdaters = new Map();
 
 function clearPlayingUpdater(widget) {

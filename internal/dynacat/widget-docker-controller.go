@@ -179,8 +179,7 @@ func (widget *dockerControllerWidget) update(ctx context.Context) {
 			selfImageName = imgName
 		}
 	} else {
-		// Still need self image name to filter images even if not showing containers.
-		// Fetch it from the containers endpoint without showing results.
+		// Still need the self image name to filter images even when not showing containers.
 		_, imgName, _ := fetchDockerCtrlContainers(client, false, selfID)
 		selfImageName = imgName
 	}

@@ -27,13 +27,11 @@ const AUTH_RATE_LIMIT_MAX_ATTEMPTS = 5
 const AUTH_TOKEN_SECRET_LENGTH = 32
 const AUTH_USERNAME_HASH_LENGTH = 32
 const AUTH_SECRET_KEY_LENGTH = AUTH_TOKEN_SECRET_LENGTH + AUTH_USERNAME_HASH_LENGTH
-const AUTH_TIMESTAMP_LENGTH = 4 // uint32
+const AUTH_TIMESTAMP_LENGTH = 4
 const AUTH_TOKEN_DATA_LENGTH = AUTH_USERNAME_HASH_LENGTH + AUTH_TIMESTAMP_LENGTH
 
-// How long the token will be valid for
-const AUTH_TOKEN_VALID_PERIOD = 14 * 24 * time.Hour // 14 days
-// How long the token has left before it should be regenerated
-const AUTH_TOKEN_REGEN_BEFORE = 7 * 24 * time.Hour // 7 days
+const AUTH_TOKEN_VALID_PERIOD = 14 * 24 * time.Hour
+const AUTH_TOKEN_REGEN_BEFORE = 7 * 24 * time.Hour
 
 var loginPageTemplate = mustParseTemplate("login.html", "document.html", "footer.html")
 
@@ -75,7 +73,6 @@ func generateSessionToken(username string, secret []byte, now time.Time) (string
 
 	signature := h.Sum(nil)
 	encodedToken := base64.StdEncoding.EncodeToString(append(data, signature...))
-	// encodedToken ends up being (hashed username + expiration timestamp + signature) encoded as base64
 
 	return encodedToken, nil
 }
@@ -123,7 +120,6 @@ func verifySessionToken(token string, secretBytes []byte, now time.Time) ([]byte
 	}
 
 	return usernameHashBytes,
-		// True if the token should be regenerated
 		time.Unix(expiresTimestamp, 0).Add(-AUTH_TOKEN_REGEN_BEFORE).Before(now),
 		nil
 }
@@ -175,7 +171,6 @@ func (a *application) handleAuthenticationAttempt(w http.ResponseWriter, r *http
 		w.WriteHeader(http.StatusTooManyRequests)
 		return
 	} else {
-		// Clean up old failed attempts
 		for ipOfAttempt := range a.failedAuthAttempts {
 			if time.Since(a.failedAuthAttempts[ipOfAttempt].first) > AUTH_RATE_LIMIT_WINDOW {
 				delete(a.failedAuthAttempts, ipOfAttempt)
@@ -255,7 +250,6 @@ func (a *application) handleAuthenticationAttempt(w http.ResponseWriter, r *http
 }
 
 func (a *application) getAuthenticatedUser(w http.ResponseWriter, r *http.Request) *authenticatedUser {
-	// Check password session cookie
 	if a.PasswordEnabled && len(a.Config.Auth.Users) > 0 {
 		token, err := r.Cookie(AUTH_SESSION_COOKIE_NAME)
 		if err == nil && token.Value != "" {
@@ -279,13 +273,11 @@ func (a *application) getAuthenticatedUser(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Check OIDC session cookie
 	if a.OIDCEnabled && a.oidcSessions != nil {
 		sessionCookie, err := r.Cookie(OIDC_SESSION_COOKIE_NAME)
 		if err == nil && sessionCookie.Value != "" {
 			sess, ok := a.oidcSessions.get(sessionCookie.Value)
 			if ok {
-				// Check session expiry
 				if time.Since(sess.CreatedAt) < OIDC_SESSION_VALID_PERIOD {
 					return &authenticatedUser{
 						Username: sess.Username,
@@ -293,7 +285,6 @@ func (a *application) getAuthenticatedUser(w http.ResponseWriter, r *http.Reques
 						IsOIDC:   true,
 					}
 				}
-				// Expired - clean up
 				a.oidcSessions.delete(sessionCookie.Value)
 			}
 		}
@@ -310,7 +301,6 @@ func (a *application) isAuthorized(w http.ResponseWriter, r *http.Request) bool 
 }
 
 func (a *application) isUserAllowedOnPage(user *authenticatedUser, p *page) bool {
-	// No restrictions = allowed for all authenticated users
 	if len(p.AllowedUsers) == 0 && len(p.AllowedGroups) == 0 {
 		return true
 	}
@@ -388,7 +378,6 @@ func (a *application) handleAccessControl(w http.ResponseWriter, r *http.Request
 
 }
 
-// Handles sending the appropriate response for an unauthorized request and returns true if the request was unauthorized
 func (a *application) handleUnauthorizedResponse(w http.ResponseWriter, r *http.Request, fallback doWhenUnauthorized) bool {
 	if a.isAuthorized(w, r) {
 		return false
@@ -407,18 +396,12 @@ func (a *application) handleUnauthorizedResponse(w http.ResponseWriter, r *http.
 
 const AUTH_REDIRECT_COOKIE_NAME = "dynacat_redirect"
 
-// isSafeLocalPath reports whether target is a same-origin path safe to use in a
-// redirect: it must be root-relative and must not be a protocol-relative
-// ("//host") or backslash ("/\host") URL a browser could resolve elsewhere.
 func isSafeLocalPath(target string) bool {
 	return strings.HasPrefix(target, "/") &&
 		!strings.HasPrefix(target, "//") &&
 		!strings.HasPrefix(target, "/\\")
 }
 
-// redirectToLoginPage remembers where an unauthenticated visitor was headed
-// (path and query) so they can be returned there after logging in, then sends
-// them to the login page.
 func (a *application) redirectToLoginPage(w http.ResponseWriter, r *http.Request) {
 	if target := r.URL.RequestURI(); isSafeLocalPath(target) {
 		http.SetCookie(w, &http.Cookie{
@@ -434,8 +417,6 @@ func (a *application) redirectToLoginPage(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, a.Config.Server.BaseURL+"/login", http.StatusSeeOther)
 }
 
-// takeLoginRedirect consumes and clears the post-login redirect cookie,
-// returning a safe destination to send the user to after a successful login.
 func (a *application) takeLoginRedirect(w http.ResponseWriter, r *http.Request) string {
 	target := a.Config.Server.BaseURL + "/"
 	if c, err := r.Cookie(AUTH_REDIRECT_COOKIE_NAME); err == nil && isSafeLocalPath(c.Value) {
@@ -458,7 +439,6 @@ func (a *application) AnyAuthEnabled() bool {
 func (a *application) handleLogoutRequest(w http.ResponseWriter, r *http.Request) {
 	a.setAuthSessionCookie(w, r, "", time.Now().Add(-1*time.Hour))
 
-	// Clear OIDC session if present
 	if a.OIDCEnabled && a.oidcSessions != nil {
 		sessionCookie, err := r.Cookie(OIDC_SESSION_COOKIE_NAME)
 		if err == nil && sessionCookie.Value != "" {

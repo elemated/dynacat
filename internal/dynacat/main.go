@@ -29,7 +29,6 @@ func Main() int {
 		}
 	}
 
-	// Resolve config path with fallback to glance.yml for backward compatibility
 	options.configPath = resolveConfigPath(options.configPath)
 
 	switch options.intent {
@@ -103,14 +102,11 @@ func Main() int {
 	return 0
 }
 
-// resolveConfigPath falls back to glance.yml if dynacat.yml doesn't exist,
-// for backward compatibility with legacy Glance configurations
 func resolveConfigPath(primaryPath string) string {
 	if stat, err := os.Stat(primaryPath); err == nil && !stat.IsDir() && stat.Size() > 0 {
 		return primaryPath
 	}
 
-	// Only fall back to glance.yml when the primary path ends with dynacat.yml
 	if filepath.Base(primaryPath) != "dynacat.yml" {
 		return primaryPath
 	}
@@ -125,9 +121,7 @@ func resolveConfigPath(primaryPath string) string {
 }
 
 func serveApp(configPath string) error {
-	// TODO: refactor if this gets any more complex, the current implementation is
-	// difficult to reason about due to all of the callbacks and simultaneous operations,
-	// use a single goroutine and a channel to initiate synchronous changes to the server
+	// TODO: refactor, hard to reason about with all the callbacks and simultaneous operations
 	exitChannel := make(chan struct{})
 	hadValidConfigOnStartup := false
 	var stopServer func() error
@@ -225,7 +219,6 @@ func serveUpdateNoticeIfConfigLocationNotMigrated(configPath string) bool {
 		return false
 	}
 
-	// dynacat.yml wasn't mounted to begin with or was incorrectly mounted as a directory
 	if stat, err := os.Stat("dynacat.yml"); err != nil || stat.IsDir() {
 		return false
 	}

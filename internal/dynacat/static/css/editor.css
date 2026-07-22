@@ -1,7 +1,3 @@
-/* Interactive page editor UI. Only active while document.body has .editing.
-   Kept intentionally subtle: muted borders and text, accents only on hover. */
-
-/* The visual editor is desktop only */
 @media (max-width: 768px) {
     #editor-toggle {
         display: none;
@@ -24,7 +20,6 @@
     stroke: var(--color-primary);
 }
 
-/* Palette dock */
 .editor-palette {
     position: fixed;
     bottom: 0;
@@ -90,17 +85,14 @@
     overflow: hidden;
 }
 
-/* Leave room for the dock so it never hides page content */
 body.editing {
     padding-bottom: 92px;
 }
 
-/* Cards are spaced by the flex gap in edit mode, not the app's inter-widget margin */
 body.editing .widget + .widget {
     margin-top: 0;
 }
 
-/* Columns become filled container areas holding cards while editing */
 body.editing .page-column {
     display: flex;
     flex-direction: column;
@@ -126,7 +118,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     pointer-events: none;
 }
 
-/* Widget cards: a compact icon + title box, no live content */
 .editor-widget {
     display: flex;
     flex-direction: column;
@@ -148,7 +139,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     gap: 10px;
 }
 
-/* Container widgets (group / split-column): nested drop zone for child cards */
 .editor-nested {
     position: relative;
     display: flex;
@@ -174,7 +164,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     pointer-events: none;
 }
 
-/* split-column: lay children out side by side so the split is visible */
 .editor-nested-split:has(> .widget) {
     flex-direction: row;
     flex-wrap: wrap;
@@ -247,7 +236,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     height: 15px;
 }
 
-/* Column remove control: sits in the column's background area, below the cards */
 .editor-column-tools {
     display: flex;
     justify-content: center;
@@ -287,7 +275,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     height: 14px;
 }
 
-/* Drop marker: absolute overlay so it does not reflow the widgets */
 .editor-drop-marker {
     position: absolute;
     left: 8px;
@@ -299,7 +286,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     pointer-events: none;
 }
 
-/* Vertical variant for horizontal (split-column) drop zones */
 .editor-drop-marker-v {
     left: auto;
     right: auto;
@@ -309,7 +295,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     height: auto;
 }
 
-/* Inter-column add line: hidden until hover */
 .editor-add-column {
     position: relative;
     flex: 0 0 14px;
@@ -357,7 +342,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     transform: scale(1);
 }
 
-/* Page management toolbar: a sleek pill group sitting in the header nav */
 .editor-page-tools {
     display: inline-flex;
     align-self: center;
@@ -401,12 +385,10 @@ body.editing .page-column:not(:has(> .widget))::after {
     color: var(--color-negative);
 }
 
-/* In edit mode the theme picker opens the styling editor on click */
 body.editing .editor-styling-trigger {
     cursor: pointer;
 }
 
-/* Modal */
 .editor-modal-overlay {
     position: fixed;
     inset: 0;
@@ -437,7 +419,6 @@ body.editing .editor-styling-trigger {
     color: var(--color-text-highlight);
 }
 
-/* Theme picker sitting where the modal title would be, centered swatch row. */
 .editor-theme-picker {
     display: flex;
     justify-content: center;
@@ -477,8 +458,6 @@ body.editing .editor-styling-trigger {
     font-weight: bold;
 }
 
-/* Inputs: a clearly visible raised surface, lighter than the modal.
-   Scoped to .editor-modal so it outweighs the app's input[type="text"] reset. */
 .editor-modal .editor-input {
     width: 100%;
     padding: 8px 10px;
@@ -495,7 +474,6 @@ body.editing .editor-styling-trigger {
     border-color: var(--color-primary);
 }
 
-/* Checkbox field: input and label on one row */
 .editor-check {
     flex-direction: row;
     align-items: center;
@@ -550,7 +528,6 @@ select.editor-input {
     cursor: pointer;
 }
 
-/* Styling modal: section heading and color picker rows */
 .editor-section-title {
     font-size: 1.35rem;
     color: var(--color-text-highlight);
@@ -653,7 +630,6 @@ select.editor-input {
     border-color: var(--color-negative);
 }
 
-/* Simple icon-only delete, pushed to the far left of the action row. */
 .editor-btn-icon-danger {
     display: flex;
     align-items: center;
@@ -679,7 +655,6 @@ select.editor-input {
     color: var(--color-text-base);
 }
 
-/* Layout picker */
 .editor-layout-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -713,7 +688,6 @@ select.editor-input {
     flex: 1;
 }
 
-/* Toasts */
 .editor-toasts {
     position: fixed;
     top: 16px;

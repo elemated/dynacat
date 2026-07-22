@@ -22,7 +22,6 @@
     flex-shrink: 0;
 }
 
-/* gives a wider hit area for the 3 people that will notice the animation : ) */
 .search-icon-container::before {
     content: '';
     position: absolute;
@@ -98,7 +97,6 @@
     display: none;
 }
 
-/* Widget border adjustments when dropdown is open */
 .search.search-suggestions-below {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
@@ -111,7 +109,6 @@
     border-top-width: 0;
 }
 
-/* Dropdown base - positioned + sized by JS */
 .search-autocomplete {
     position: fixed;
     z-index: 200;

@@ -177,14 +177,7 @@ func newConfigFromYAML(contents []byte) (*config, error) {
 var envVariableNamePattern = regexp.MustCompile(`^[A-Z0-9_]+$`)
 var configVariablePattern = regexp.MustCompile(`(^|.)\$\{(?:([a-zA-Z]+):)?([a-zA-Z0-9_-]+)\}`)
 
-// Parses variables defined in the config such as:
-// ${API_KEY} 				            - gets replaced with the value of the API_KEY environment variable
-// \${API_KEY} 					        - escaped, gets used as is without the \ in the config
-// ${secret:api_key} 			        - value gets loaded from /run/secrets/api_key
-// ${readFileFromEnv:PATH_TO_SECRET}    - value gets loaded from the file path specified in the environment variable PATH_TO_SECRET
-//
-// TODO: don't match against commented out sections, not sure exactly how since
-// variables can be placed anywhere and used to modify the YAML structure itself
+// TODO: don't match against commented out sections
 func parseConfigVariables(contents []byte) ([]byte, error) {
 	var err error
 
@@ -195,8 +188,6 @@ func parseConfigVariables(contents []byte) ([]byte, error) {
 
 		groups := configVariablePattern.FindSubmatch(match)
 		if len(groups) != 4 {
-			// we can't handle this match, this shouldn't happen unless the number of groups
-			// in the regex has been changed without updating the below code
 			return match
 		}
 
@@ -232,7 +223,6 @@ func parseConfigVariables(contents []byte) ([]byte, error) {
 	return replaced, nil
 }
 
-// When the bool return value is true, it indicates that the caller should use the original value
 func parseConfigVariableOfType(variableType, variableName string) (string, bool, error) {
 	switch variableType {
 	case configVarTypeEnv:
@@ -420,7 +410,6 @@ func configFilesWatcher(
 
 	updateWatchedFiles(nil, lastIncludes)
 
-	// needed for lastContents and lastIncludes because they get updated in multiple goroutines
 	mu := sync.Mutex{}
 
 	parseAndCompareBeforeCallback := func() {
@@ -475,19 +464,9 @@ func configFilesWatcher(
 				if event.Has(fsnotify.Write) {
 					debouncedParseAndCompareBeforeCallback()
 				} else if event.Has(fsnotify.Rename) {
-					// on linux the file will no longer be watched after a rename, on windows
-					// it will continue to be watched with the new name but we have no access to
-					// the new name in this event in order to stop watching it manually and match the
-					// behavior in linux, may lead to weird unintended behaviors on windows as we're
-					// only handling renames from linux's perspective
 					// see https://github.com/fsnotify/fsnotify/issues/255
-
-					// remove the old file from our manually tracked includes, calling
-					// debouncedParseAndCompareBeforeCallback will re-add it if it's still
-					// required after it triggers
 					deleteLastInclude(event.Name)
 
-					// wait for file to maybe get created again
 					// see https://github.com/Panonim/dynacat/pull/358
 					for range 10 {
 						if _, err := os.Stat(event.Name); err == nil {
@@ -521,10 +500,7 @@ func configFilesWatcher(
 	}, nil
 }
 
-// TODO: Refactor, we currently validate in two different places, this being
-// one of them, which doesn't modify the data and only checks for logical errors
-// and then again when creating the application which does modify the data and do
-// further validation. Would be better if validation was done in a single place.
+// TODO: validation happens in two places, would be better in a single place
 func isConfigStateValid(config *config) error {
 	if len(config.Pages) == 0 {
 		return fmt.Errorf("no pages configured")
@@ -643,7 +619,6 @@ func isConfigStateValid(config *config) error {
 	return nil
 }
 
-// Read-only way to store ordered maps from a YAML structure
 type orderedYAMLMap[K comparable, V any] struct {
 	keys []K
 	data map[K]V

@@ -28,8 +28,6 @@ var staticFS, _ = fs.Sub(_staticFS, "static")
 var templateFS, _ = fs.Sub(_templateFS, "templates")
 
 func readAllFromStaticFS(path string) ([]byte, error) {
-	// For some reason fs.FS only works with forward slashes, so in case we're
-	// running on Windows or pass paths with backslashes we need to replace them.
 	path = strings.ReplaceAll(path, "\\", "/")
 
 	file, err := staticFS.Open(path)
@@ -92,7 +90,6 @@ func computeFSHash(files fs.FS) (string, error) {
 var cssImportPattern = regexp.MustCompile(`(?m)^@import "(.*?)";$`)
 var cssSingleLineCommentPattern = regexp.MustCompile(`(?m)^\s*\/\*.*?\*\/$`)
 
-// Yes, we bundle at runtime, give comptime pls
 var bundledCSSContents = func() []byte {
 	const mainFilePath = "css/main.css"
 
@@ -107,7 +104,6 @@ var bundledCSSContents = func() []byte {
 			return nil, err
 		}
 
-		// Normalize line endings, otherwise the \r's make the regex not match
 		mainFileContents = bytes.ReplaceAll(mainFileContents, []byte("\r\n"), []byte("\n"))
 
 		mainFileDir := filepath.Dir(path)
@@ -149,9 +145,6 @@ var bundledCSSContents = func() []byte {
 		panic(fmt.Sprintf("building CSS bundle: %v", err))
 	}
 
-	// We could strip a bunch more unnecessary characters, but the biggest
-	// win comes from removing the whitespace at the beginning of lines
-	// since that's at least 4 bytes per property, which yielded a ~20% reduction.
 	contents = cssSingleLineCommentPattern.ReplaceAll(contents, nil)
 	contents = whitespaceAtBeginningOfLinePattern.ReplaceAll(contents, nil)
 	contents = bytes.ReplaceAll(contents, []byte("\n"), []byte(""))

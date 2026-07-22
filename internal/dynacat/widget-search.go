@@ -24,14 +24,13 @@ type searchBookmarkMatch struct {
 }
 
 type searchWidget struct {
-	widgetBase           `yaml:",inline"`
-	cachedHTML           template.HTML `yaml:"-"`
-	Frameless            bool          `yaml:"frameless"`
-	SearchEngine         string        `yaml:"search-engine"`
-	AutocompleteEnabled  *bool         `yaml:"autocomplete"`
-	Autocomplete         bool          `yaml:"-"`
-	AutocompleteProvider string        `yaml:"autocomplete-provider"`
-	// Back-compat for the old autocomplete-provider: custom + autocomplete-url format.
+	widgetBase                `yaml:",inline"`
+	cachedHTML                template.HTML         `yaml:"-"`
+	Frameless                 bool                  `yaml:"frameless"`
+	SearchEngine              string                `yaml:"search-engine"`
+	AutocompleteEnabled       *bool                 `yaml:"autocomplete"`
+	Autocomplete              bool                  `yaml:"-"`
+	AutocompleteProvider      string                `yaml:"autocomplete-provider"`
 	DeprecatedAutocompleteURL string                `yaml:"autocomplete-url"`
 	Bangs                     []SearchBang          `yaml:"bangs"`
 	NewTab                    bool                  `yaml:"new-tab"`
@@ -44,8 +43,6 @@ type searchWidget struct {
 }
 
 func convertSearchUrl(url string) string {
-	// html/template escapes the {QUERY} curlies regardless of type; dodge it with
-	// a placeholder restored client-side.
 	return strings.ReplaceAll(url, "{QUERY}", "!QUERY!")
 }
 
@@ -62,7 +59,7 @@ var searchEngines = map[string]string{
 
 func (widget *searchWidget) initialize() error {
 	widget.withTitle("Search").withError(nil)
-	widget.UpdateInterval = nil // search widget is static, never poll
+	widget.UpdateInterval = nil
 
 	if widget.CrossPageBookmarks {
 		widget.IncludeBookmarks = true
@@ -114,7 +111,6 @@ func (widget *searchWidget) initialize() error {
 	return nil
 }
 
-// AutocompleteProviderKind maps the provider to a kind so a custom URL is never sent to the browser.
 func (widget *searchWidget) AutocompleteProviderKind() string {
 	if widget.AutocompleteProvider == "duckduckgo" || widget.AutocompleteProvider == "brave" {
 		return widget.AutocompleteProvider
@@ -133,9 +129,7 @@ func (widget *searchWidget) setProviders(providers *widgetProviders) {
 	widget.cachedHTML = widget.renderTemplate(widget, searchWidgetTemplate)
 }
 
-// collectBookmarks gathers bookmark links to surface as suggestions. Run only
-// after every widget is registered, since target bookmarks widgets may not exist
-// yet during setProviders. pageFilter restricts matches to one page; nil, all.
+// Run only after every widget is registered; pageFilter nil matches all pages.
 func (widget *searchWidget) collectBookmarks(app *application, pageFilter *page) {
 	if !widget.IncludeBookmarks {
 		return

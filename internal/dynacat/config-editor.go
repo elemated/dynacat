@@ -15,11 +15,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// The editor reads and writes the YAML source files directly using yaml.Node so
-// comments, ordering and $include directives are preserved. Each page is either
-// inline in the main file or pulled in via `- $include: file.yml`; edits are routed
-// to the file that actually owns the page.
-
 type editorConfigView struct {
 	Pages        []editorPageView   `json:"pages"`
 	Theme        map[string]string  `json:"theme"`
@@ -28,8 +23,6 @@ type editorConfigView struct {
 	MainWritable bool               `json:"mainWritable"`
 }
 
-// editorPresetView is one named theme preset (theme.presets.<key>) exposed to the
-// styling editor so presets can be selected, overwritten and deleted.
 type editorPresetView struct {
 	Key    string            `json:"key"`
 	Values map[string]string `json:"values"`
@@ -41,7 +34,7 @@ type editorPageView struct {
 	Width    string             `json:"width"`
 	File     string             `json:"file"`
 	Writable bool               `json:"writable"`
-	Options  map[string]string  `json:"options"` // raw scalar page-level options (name-icon, key-bind, ...)
+	Options  map[string]string  `json:"options"`
 	Columns  []editorColumnView `json:"columns"`
 }
 
@@ -54,25 +47,25 @@ type editorWidgetView struct {
 	Type    string             `json:"type"`
 	Title   string             `json:"title"`
 	Values  map[string]string  `json:"values"`
-	Widgets []editorWidgetView `json:"widgets,omitempty"` // nested children for container widgets
+	Widgets []editorWidgetView `json:"widgets,omitempty"`
 }
 
 type editorMutation struct {
 	Op         string            `json:"op"`
 	Page       int               `json:"page"`
-	Column     int               `json:"column"` // addColumn/removeColumn
-	Index      int               `json:"index"`  // addColumn insert position
-	Path       []int             `json:"path"`   // widget location: [column, ...nested, index]
-	ToPath     []int             `json:"toPath"` // moveWidget destination
+	Column     int               `json:"column"`
+	Index      int               `json:"index"`
+	Path       []int             `json:"path"`
+	ToPath     []int             `json:"toPath"`
 	Size       string            `json:"size"`
 	WidgetType string            `json:"widgetType"`
-	Fields     map[string]any    `json:"fields"`    // scalar inputs
-	RawFields  map[string]string `json:"rawFields"` // yaml-kind inputs, parsed as YAML
-	Title      string            `json:"title"`     // addPage
-	Layout     []string          `json:"layout"`    // addPage column sizes
-	Theme      map[string]any    `json:"theme"`     // editStyling: theme section fields
-	Branding   map[string]any    `json:"branding"`  // editStyling: branding section fields
-	PresetKey  string            `json:"presetKey"` // editStyling target preset (empty = base theme); deleteThemePreset key
+	Fields     map[string]any    `json:"fields"`
+	RawFields  map[string]string `json:"rawFields"`
+	Title      string            `json:"title"`
+	Layout     []string          `json:"layout"`
+	Theme      map[string]any    `json:"theme"`
+	Branding   map[string]any    `json:"branding"`
+	PresetKey  string            `json:"presetKey"`
 }
 
 type editorPermissionError struct{ path string }
@@ -81,8 +74,6 @@ func (e *editorPermissionError) Error() string {
 	return fmt.Sprintf("cannot write %s: the config directory is read only or lacks write permission", filepath.Base(e.path))
 }
 
-// isWriteBlockedError reports errors meaning the file cannot be written: permission
-// denied or a read-only filesystem (e.g. a read-only Docker bind mount).
 func isWriteBlockedError(err error) bool {
 	return os.IsPermission(err) || errors.Is(err, syscall.EROFS)
 }
@@ -91,7 +82,6 @@ type editorValidationError struct{ err error }
 
 func (e *editorValidationError) Error() string { return e.err.Error() }
 
-// buildEditorConfigView builds the logical page/column/widget tree from the source files.
 func (a *application) buildEditorConfigView() (editorConfigView, error) {
 	mainPath := a.configPath
 	mainDoc, err := loadYAMLDocument(mainPath)
@@ -111,8 +101,6 @@ func (a *application) buildEditorConfigView() (editorConfigView, error) {
 			return editorConfigView{}, err
 		}
 		pv := pageNodeToView(pageNode, path)
-		// Slug is derived from the name at load time and absent from the source YAML,
-		// so take the runtime slug/title (page order matches the source order).
 		if i < len(a.Config.Pages) {
 			pv.Slug = a.Config.Pages[i].Slug
 			pv.Title = a.Config.Pages[i].Title
@@ -120,7 +108,6 @@ func (a *application) buildEditorConfigView() (editorConfigView, error) {
 		view.Pages = append(view.Pages, pv)
 	}
 
-	// Theme and branding live in the main config file's top-level mapping.
 	root := documentRoot(mainDoc)
 	view.Theme = sectionToStringMap(root, "theme")
 	view.Branding = sectionToStringMap(root, "branding")
@@ -130,8 +117,6 @@ func (a *application) buildEditorConfigView() (editorConfigView, error) {
 	return view, nil
 }
 
-// sectionToStringMap reads the scalar children of a top-level mapping (e.g. theme
-// or branding) into a flat map. Nested mappings such as theme presets are skipped.
 func sectionToStringMap(root *yaml.Node, key string) map[string]string {
 	out := map[string]string{}
 	section := getMappingValue(root, key)
@@ -146,8 +131,6 @@ func sectionToStringMap(root *yaml.Node, key string) map[string]string {
 	return out
 }
 
-// presetsToViews reads the scalar fields of every theme.presets.<key> mapping,
-// preserving source order, so the editor can list and prefill them.
 func presetsToViews(root *yaml.Node) []editorPresetView {
 	out := []editorPresetView{}
 	theme := getMappingValue(root, "theme")
@@ -184,8 +167,6 @@ func pageNodeToView(pageNode *yaml.Node, path string) editorPageView {
 		Options:  map[string]string{},
 	}
 
-	// All top-level scalar keys are surfaced so the editor can prefill the page
-	// options modal (name-icon, key-bind, hide-from-navigation, ...).
 	for i := 0; i+1 < len(pageNode.Content); i += 2 {
 		if v := pageNode.Content[i+1]; v.Kind == yaml.ScalarNode {
 			pv.Options[pageNode.Content[i].Value] = v.Value
@@ -218,7 +199,6 @@ func widgetNodeToView(w *yaml.Node) editorWidgetView {
 		case "type":
 			wv.Type = val.Value
 		case "widgets":
-			// Container children are surfaced as nested views, not a raw value.
 			if val.Kind == yaml.SequenceNode {
 				for _, child := range val.Content {
 					wv.Widgets = append(wv.Widgets, widgetNodeToView(child))
@@ -234,8 +214,6 @@ func widgetNodeToView(w *yaml.Node) editorWidgetView {
 	return wv
 }
 
-// applyEditorMutation mutates the owning source file's node tree, then writes and
-// validates. On validation failure the original bytes are restored.
 func (a *application) applyEditorMutation(m editorMutation) error {
 	mainPath := a.configPath
 	mainDoc, err := loadYAMLDocument(mainPath)
@@ -264,8 +242,6 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 	if m.Op == "deleteThemePreset" {
 		root := documentRoot(mainDoc)
 		if m.PresetKey == "" {
-			// Empty key means the base ("Default") theme: reset it to the built-in
-			// default by dropping its scalar fields, keeping any presets intact.
 			resetBaseTheme(root)
 		} else {
 			removeThemePreset(root, m.PresetKey)
@@ -288,8 +264,6 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 		if pages == nil || !validIndex(pages.Content, m.Page) {
 			return fmt.Errorf("page %d out of range", m.Page)
 		}
-		// Capture the included file (if any) before dropping the node so it can be
-		// removed from disk once the main file is rewritten without it.
 		includeFile := includeTarget(pages.Content[m.Page])
 		pages.Content = removeNode(pages.Content, m.Page)
 		if err := a.writeConfigCandidate(mainPath, marshalDocument(mainDoc)); err != nil {
@@ -319,16 +293,11 @@ func (a *application) applyEditorMutation(m editorMutation) error {
 		return err
 	}
 
-	// Keep the edited page in readable block style; a widget inserted into a `[]`
-	// sequence would otherwise collapse to `[{type: reddit, ...}]` flow style.
 	setBlockStyleDeep(pageNode)
 
 	return a.writeConfigCandidate(path, marshalDocument(doc))
 }
 
-// setBlockStyleDeep forces block (multi-line) style on every mapping and sequence
-// in the subtree so editor writes stay easy to read. Scalar nodes keep their own
-// style so quoting (e.g. a single-quoted URL) is preserved.
 func setBlockStyleDeep(n *yaml.Node) {
 	if n == nil {
 		return
@@ -394,7 +363,6 @@ func mutateColumns(columns *yaml.Node, m editorMutation) error {
 			return err
 		}
 		widgets.Content = removeNode(widgets.Content, index)
-		// Same parent: the target index was computed before removal.
 		if dstWidgets == widgets && dstIndex > index {
 			dstIndex--
 		}
@@ -405,8 +373,6 @@ func mutateColumns(columns *yaml.Node, m editorMutation) error {
 	return nil
 }
 
-// resolveWidgets walks a widget path ([column, ...nested container indices, target
-// index]) to the widgets sequence that owns the target and its index within it.
 func resolveWidgets(columns *yaml.Node, path []int) (*yaml.Node, int, error) {
 	if len(path) < 2 {
 		return nil, 0, fmt.Errorf("invalid widget path")
@@ -433,8 +399,6 @@ func resolveWidgets(columns *yaml.Node, path []int) (*yaml.Node, int, error) {
 	return widgets, path[len(path)-1], nil
 }
 
-// isIntPrefix reports whether prefix is a leading slice of full (used to block
-// moving a container into its own subtree).
 func isIntPrefix(prefix, full []int) bool {
 	if len(prefix) > len(full) {
 		return false
@@ -447,9 +411,6 @@ func isIntPrefix(prefix, full []int) bool {
 	return true
 }
 
-// applyPageFields upserts page-level options. Empty strings and false booleans drop
-// the key so the YAML stays minimal; `name` is never dropped since a page needs one.
-// New keys land above `columns` so page metadata stays grouped at the top.
 func applyPageFields(pageNode *yaml.Node, fields map[string]any) {
 	for _, k := range sortedKeys(fields) {
 		v := fields[k]
@@ -464,8 +425,6 @@ func applyPageFields(pageNode *yaml.Node, fields map[string]any) {
 	}
 }
 
-// setPageMappingKey updates an existing key in place, otherwise inserts it before
-// the `columns` entry (falling back to append) so metadata precedes the layout.
 func setPageMappingKey(m *yaml.Node, key string, value *yaml.Node) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if m.Content[i].Value == key {
@@ -505,9 +464,6 @@ func newPageMapping(m editorMutation) *yaml.Node {
 	return page
 }
 
-// separatePageFilesEnabled reports whether a new page created in the editor gets
-// its own file linked via `$include`. Set EDITOR_SEPARATE_PAGE_FILES to false/0/f
-// to write new pages inline into the main config instead.
 func separatePageFilesEnabled() bool {
 	switch os.Getenv("EDITOR_SEPARATE_PAGE_FILES") {
 	case "false", "0", "f":
@@ -516,7 +472,6 @@ func separatePageFilesEnabled() bool {
 	return true
 }
 
-// addPageInline appends the new page directly to the main config's `pages` list.
 func (a *application) addPageInline(mainDoc *yaml.Node, mainPath string, m editorMutation) error {
 	root := documentRoot(mainDoc)
 	pages := getMappingValue(root, "pages")
@@ -532,9 +487,6 @@ func (a *application) addPageInline(mainDoc *yaml.Node, mainPath string, m edito
 	return a.writeConfigCandidate(mainPath, marshalDocument(mainDoc))
 }
 
-// addPageFile writes the new page to its own YAML file and links it into the main
-// config via `- $include: file.yml`, matching how the pre-shipped pages are kept in
-// separate files. On validation failure both the new file and the main edit roll back.
 func (a *application) addPageFile(mainDoc *yaml.Node, mainPath string, m editorMutation) error {
 	pages := getMappingValue(documentRoot(mainDoc), "pages")
 	if pages == nil {
@@ -546,8 +498,6 @@ func (a *application) addPageFile(mainDoc *yaml.Node, mainPath string, m editorM
 	file := uniquePageFileName(dir, orDefault(m.Title, "New Page"))
 	pagePath := filepath.Join(dir, file)
 
-	// The included file holds a single-item sequence (`- name: ...`), the form the
-	// pre-shipped page files use.
 	page := newPageMapping(m)
 	setBlockStyleDeep(page)
 	pageDoc := &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{
@@ -565,14 +515,12 @@ func (a *application) addPageFile(mainDoc *yaml.Node, mainPath string, m editorM
 	pages.Content = append(pages.Content, include)
 
 	if err := a.writeConfigCandidate(mainPath, marshalDocument(mainDoc)); err != nil {
-		os.Remove(pagePath) // drop the orphaned page file when the include is rejected
+		os.Remove(pagePath)
 		return err
 	}
 	return nil
 }
 
-// uniquePageFileName turns a page title into a config-directory-relative filename
-// that does not collide with an existing file.
 func uniquePageFileName(dir, title string) string {
 	base := titleToSlug(title)
 	base = pageFileNamePattern.ReplaceAllString(base, "")
@@ -610,14 +558,13 @@ func (a *application) writeConfigCandidate(path string, candidate []byte) error 
 		_, err = newConfigFromYAML(merged)
 	}
 	if err != nil {
-		os.WriteFile(path, original, perm) // roll back invalid edit
+		os.WriteFile(path, original, perm)
 		return &editorValidationError{err}
 	}
 
 	return nil
 }
 
-// resolvePageNode returns the file, document and page mapping node owning a page.
 func resolvePageNode(mainDoc *yaml.Node, mainPath string, idx int) (string, *yaml.Node, *yaml.Node, error) {
 	pages := getMappingValue(documentRoot(mainDoc), "pages")
 	if pages == nil || pages.Kind != yaml.SequenceNode || !validIndex(pages.Content, idx) {
@@ -640,10 +587,6 @@ func resolvePageNode(mainDoc *yaml.Node, mainPath string, idx int) (string, *yam
 	return mainPath, mainDoc, item, nil
 }
 
-//
-// yaml.Node helpers
-//
-
 func loadYAMLDocument(path string) (*yaml.Node, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -663,8 +606,6 @@ func documentRoot(doc *yaml.Node) *yaml.Node {
 	return doc
 }
 
-// firstMapping returns the page mapping, whether the file root is that mapping or a
-// single-item sequence (the `- name: ...` form used by included page files).
 func firstMapping(root *yaml.Node) *yaml.Node {
 	if root.Kind == yaml.SequenceNode && len(root.Content) > 0 {
 		return root.Content[0]
@@ -740,7 +681,6 @@ func editWidgetNode(node *yaml.Node, fields map[string]any, rawFields map[string
 	return applyFieldsToNode(node, fields, rawFields)
 }
 
-// applyFieldsToNode upserts scalar fields and parsed yaml fields; empty values drop the key.
 func applyFieldsToNode(node *yaml.Node, fields map[string]any, rawFields map[string]string) error {
 	for _, k := range sortedKeys(fields) {
 		if isEmptyValue(fields[k]) {
@@ -765,9 +705,6 @@ func applyFieldsToNode(node *yaml.Node, fields map[string]any, rawFields map[str
 	return nil
 }
 
-// applyStylingSection upserts the scalar fields of a top-level section (theme or
-// branding), creating it if needed. A field that is empty, false or zero drops the
-// key so the YAML stays close to the defaults. An emptied section is removed.
 func applyStylingSection(root *yaml.Node, key string, fields map[string]any) {
 	if fields == nil {
 		return
@@ -790,10 +727,6 @@ func applyStylingSection(root *yaml.Node, key string, fields map[string]any) {
 	}
 }
 
-// applyThemePreset upserts the scalar fields of a single theme.presets.<key>
-// mapping, creating the theme, presets and preset nodes as needed. Empty/false/zero
-// fields drop their key; the preset mapping itself is kept even when emptied so a
-// user-created preset does not silently vanish.
 func applyThemePreset(root *yaml.Node, key string, fields map[string]any) {
 	theme := getMappingValue(root, "theme")
 	if theme == nil {
@@ -820,8 +753,6 @@ func applyThemePreset(root *yaml.Node, key string, fields map[string]any) {
 	}
 }
 
-// removeThemePreset deletes theme.presets.<key>, dropping the presets mapping when
-// it becomes empty.
 func removeThemePreset(root *yaml.Node, key string) {
 	theme := getMappingValue(root, "theme")
 	if theme == nil {
@@ -837,9 +768,6 @@ func removeThemePreset(root *yaml.Node, key string) {
 	}
 }
 
-// resetBaseTheme drops the scalar fields of the top-level theme mapping (the base
-// theme), reverting it to the built-in default, while preserving nested mappings such
-// as theme.presets. The theme mapping is removed if nothing is left.
 func resetBaseTheme(root *yaml.Node) {
 	theme := getMappingValue(root, "theme")
 	if theme == nil {

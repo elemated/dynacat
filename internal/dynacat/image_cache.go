@@ -123,10 +123,6 @@ func (c *imageCache) findExistingFile(hashHex string, urlPath string) (string, b
 	return "", false
 }
 
-func (c *imageCache) downloadAndCache(ctx context.Context, rawURL string, hashHex string, urlPath string) (string, error) {
-	return c.downloadAndCacheWithClient(ctx, rawURL, hashHex, urlPath, false)
-}
-
 func (c *imageCache) downloadAndCacheWithClient(ctx context.Context, rawURL string, hashHex string, urlPath string, allowInsecure bool) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {

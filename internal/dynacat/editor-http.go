@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-const editorMaxBodyBytes = 1 << 20 // 1 MiB
+const editorMaxBodyBytes = 1 << 20
 
 func (a *application) handleEditorSchema(w http.ResponseWriter, r *http.Request) {
 	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
@@ -16,8 +16,6 @@ func (a *application) handleEditorSchema(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, allWidgetSchemas())
 }
 
-// handleEditorStatus returns a generation that changes whenever the config hot-reloads,
-// letting the editor wait for the server to pick up a page add/remove before navigating.
 func (a *application) handleEditorStatus(w http.ResponseWriter, r *http.Request) {
 	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
 		return

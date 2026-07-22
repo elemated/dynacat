@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// widgetFieldSchema describes one editable option of a widget for the editor UI.
 type widgetFieldSchema struct {
 	Name     string   `json:"name"`
 	Label    string   `json:"label"`
@@ -19,11 +18,10 @@ type widgetTypeSchema struct {
 	Type   string              `json:"type"`
 	Label  string              `json:"label"`
 	Icon   string              `json:"icon"`
-	Hidden bool                `json:"hidden,omitempty"` // kept editable but omitted from the palette
+	Hidden bool                `json:"hidden,omitempty"`
 	Fields []widgetFieldSchema `json:"fields"`
 }
 
-// hiddenWidgetTypes are excluded from the palette (still editable if already used).
 var hiddenWidgetTypes = map[string]bool{
 	"html": true,
 }
@@ -34,8 +32,7 @@ type widgetTypeMeta struct {
 	Icon  string
 }
 
-// widgetTypeCatalog lists every user-selectable widget for the palette.
-// Keep in sync with the newWidget switch in widget.go (the one manual sync point).
+// Keep in sync with the newWidget switch in widget.go.
 var widgetTypeCatalog = []widgetTypeMeta{
 	{"calendar", "Calendar", "mdi:calendar"},
 	{"clock", "Clock", "mdi:clock-outline"},
@@ -80,17 +77,12 @@ type fieldAnnotation struct {
 	Required bool
 }
 
-// alwaysAdvancedFields are the shared plumbing options hidden under Advanced for
-// every widget. Everything else defaults to basic (shown by default).
 var alwaysAdvancedFields = map[string]bool{
 	"title": true, "title-icon": true, "title-url": true, "hide-header": true,
 	"css-class": true, "cache": true, "update-interval": true, "lazy-load": true,
 	"frameless": true,
 }
 
-// fieldAnnotations overlays per-widget specifics reflection cannot know: which
-// widget-specific fields are advanced (auth/network/low-level), select options and
-// required flags. Fields not listed here (and not in alwaysAdvancedFields) are basic.
 var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	"calendar": {
 		"first-day-of-week": {Options: []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}},
@@ -226,7 +218,6 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	},
 }
 
-// widgetSchema reflects a widget struct into an editor schema, overlaying annotations.
 func widgetSchema(meta widgetTypeMeta) (widgetTypeSchema, error) {
 	w, err := newWidget(meta.Type)
 	if err != nil {
@@ -277,12 +268,10 @@ func allWidgetSchemas() []widgetTypeSchema {
 	return schemas
 }
 
-// deprecatedSchemaFields still parse for back-compat but never appear in the editor.
 var deprecatedSchemaFields = map[string]bool{
 	"autocomplete-url": true,
 }
 
-// reflectWidgetFields walks yaml-tagged fields, recursing into inlined structs.
 func reflectWidgetFields(t reflect.Type) []widgetFieldSchema {
 	var fields []widgetFieldSchema
 
@@ -347,7 +336,7 @@ func fieldKind(t reflect.Type) string {
 	case reflect.String:
 		return "text"
 	default:
-		return "yaml" // slices, maps, nested structs get a raw yaml editor
+		return "yaml"
 	}
 }
 

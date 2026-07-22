@@ -65,7 +65,6 @@ func isDisallowedIP(ip net.IP) bool {
 		ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
 		return true
 	}
-	// Cloud metadata endpoints (169.254.x covered by link-local; include IMDSv2 fd00:ec2::254)
 	if ip.Equal(net.ParseIP("fd00:ec2::254")) {
 		return true
 	}
@@ -94,7 +93,6 @@ func (a *application) handleImageProxyRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Fetch the image using the stored URL with the appropriate client
 	client := ternary(info.AllowInsecure, defaultInsecureHTTPClient, defaultHTTPClient)
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, info.URL, nil)
 	if err != nil {
@@ -117,20 +115,15 @@ func (a *application) handleImageProxyRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Set appropriate headers for the response
 	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	w.Header().Set("Cache-Control", "public, max-age=2592000, immutable") // 30 days
+	w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
 	w.WriteHeader(http.StatusOK)
 
-	// Stream the image to the client
 	if _, err := io.Copy(w, resp.Body); err != nil {
-		// Error writing response, client may have disconnected
 		return
 	}
 }
 
-// respondWithOpenSearchSuggestions fetches requestURL and writes its suggestions
-// to w. Expects the OpenSearch format ["query", ["suggestion1", ...]], hence raw[1].
 func (a *application) respondWithOpenSearchSuggestions(w http.ResponseWriter, r *http.Request, requestURL string) {
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, requestURL, nil)
 	if err != nil {

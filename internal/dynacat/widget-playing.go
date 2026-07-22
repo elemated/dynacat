@@ -73,7 +73,6 @@ type navidromeNowPlayingResponse struct {
 				Duration   int64  `json:"duration"`
 				MinutesAgo int    `json:"minutesAgo"`
 				CoverArt   string `json:"coverArt"`
-				// openSubsonic extensions (Navidrome) - exact playback state.
 				State      string `json:"state"`
 				PositionMs *int64 `json:"positionMs"`
 			} `json:"entry"`
@@ -86,23 +85,22 @@ type navidromeNowPlayingResponse struct {
 }
 
 type playingWidget struct {
-	widgetBase  `yaml:",inline"`
-	Frameless   bool                `yaml:"frameless"`
-	Hosts       []PlayingHostConfig `yaml:"hosts"`
-	SmallColumn bool                `yaml:"small-column"`
-	// `compact` option removed - layouts use the default (non-compact) sizing
-	PlayState               string `yaml:"play-state"`
-	ShowThumbnail           *bool  `yaml:"show-thumbnail"`
-	ShowPaused              bool   `yaml:"show-paused"`
-	ShowProgressBar         *bool  `yaml:"show-progress-bar"`
-	ShowProgressInfo        *bool  `yaml:"show-progress-info"`
-	GroupByHost             bool   `yaml:"group-by-host"`
-	HideUsername            bool   `yaml:"hide-username"`
-	EpisodeTitleFormat      string `yaml:"episode-title-format"`
-	Debug                   bool   `yaml:"debug"`
-	ShowThumbnailEnabled    bool   `yaml:"-"`
-	ShowProgressBarEnabled  bool   `yaml:"-"`
-	ShowProgressInfoEnabled bool   `yaml:"-"`
+	widgetBase              `yaml:",inline"`
+	Frameless               bool                `yaml:"frameless"`
+	Hosts                   []PlayingHostConfig `yaml:"hosts"`
+	SmallColumn             bool                `yaml:"small-column"`
+	PlayState               string              `yaml:"play-state"`
+	ShowThumbnail           *bool               `yaml:"show-thumbnail"`
+	ShowPaused              bool                `yaml:"show-paused"`
+	ShowProgressBar         *bool               `yaml:"show-progress-bar"`
+	ShowProgressInfo        *bool               `yaml:"show-progress-info"`
+	GroupByHost             bool                `yaml:"group-by-host"`
+	HideUsername            bool                `yaml:"hide-username"`
+	EpisodeTitleFormat      string              `yaml:"episode-title-format"`
+	Debug                   bool                `yaml:"debug"`
+	ShowThumbnailEnabled    bool                `yaml:"-"`
+	ShowProgressBarEnabled  bool                `yaml:"-"`
+	ShowProgressInfoEnabled bool                `yaml:"-"`
 
 	mu             sync.RWMutex              `yaml:"-"`
 	Sessions       []mediaSession            `yaml:"-"`
@@ -157,10 +155,8 @@ func (widget *playingWidget) initialize() error {
 		widget.UpdateInterval = &interval
 	}
 
-	// Set cache duration to match update interval
 	widget.withCacheDuration(time.Duration(*widget.UpdateInterval))
 
-	// Set defaults
 	if widget.PlayState == "" {
 		widget.PlayState = "indicator"
 	}
@@ -168,7 +164,6 @@ func (widget *playingWidget) initialize() error {
 		widget.EpisodeTitleFormat = "series"
 	}
 
-	// Boolean defaults - only applied when not explicitly set by the user
 	t := true
 	if widget.ShowThumbnail == nil {
 		widget.ShowThumbnail = &t
@@ -180,10 +175,8 @@ func (widget *playingWidget) initialize() error {
 		widget.ShowProgressInfo = &t
 	}
 
-	// Explicit default for grouping
 	widget.GroupByHost = false
 
-	// Ensure progress info is disabled if there's no progress bar
 	if !*widget.ShowProgressBar {
 		f := false
 		widget.ShowProgressInfo = &f
@@ -193,7 +186,6 @@ func (widget *playingWidget) initialize() error {
 	widget.ShowProgressBarEnabled = widget.ShowProgressBar != nil && *widget.ShowProgressBar
 	widget.ShowProgressInfoEnabled = widget.ShowProgressInfo != nil && *widget.ShowProgressInfo
 
-	// Validate and parse host URLs
 	if len(widget.Hosts) == 0 {
 		return fmt.Errorf("at least one host must be specified")
 	}
@@ -228,17 +220,14 @@ func (widget *playingWidget) initialize() error {
 		}
 	}
 
-	// Validate play-state
 	if widget.PlayState != "indicator" && widget.PlayState != "text" {
 		return fmt.Errorf("play-state must be 'indicator' or 'text'")
 	}
 
-	// Validate episode-title-format
 	if widget.EpisodeTitleFormat != "series" && widget.EpisodeTitleFormat != "episode" {
 		return fmt.Errorf("episode-title-format must be 'series' or 'episode'")
 	}
 
-	// Initialize session maps
 	if widget.GroupByHost {
 		widget.SessionsByHost = make(map[string][]mediaSession)
 	}
@@ -260,7 +249,6 @@ func (widget *playingWidget) update(ctx context.Context) {
 	results := make(chan fetchResult, len(widget.Hosts))
 	var wg sync.WaitGroup
 
-	// Fetch sessions from all hosts in parallel
 	for i := range widget.Hosts {
 		host := &widget.Hosts[i]
 		wg.Add(1)
@@ -276,7 +264,6 @@ func (widget *playingWidget) update(ctx context.Context) {
 		close(results)
 	}()
 
-	// Collect results
 	var allSessions []mediaSession
 	successCount := 0
 	errorCount := 0
@@ -300,8 +287,6 @@ func (widget *playingWidget) update(ctx context.Context) {
 	widget.mu.Lock()
 	widget.Sessions = allSessions
 	if widget.GroupByHost {
-		// Rebuild map logic if needed, but the original code did it inside the loop
-		// Let's defer map rebuilding to here to be safe under lock or do it properly
 		widget.SessionsByHost = make(map[string][]mediaSession)
 		for _, session := range allSessions {
 			hostKey := fmt.Sprintf("%s:%s", session.ServerType, session.ServerURL)
@@ -321,7 +306,6 @@ func (widget *playingWidget) update(ctx context.Context) {
 		}
 	}
 
-	// Handle errors
 	var err error
 	if successCount == 0 {
 		err = errNoContent
@@ -402,10 +386,6 @@ func (widget *playingWidget) fetchNavidromeSessions(ctx context.Context, host *P
 	for _, item := range response.SubsonicResponse.NowPlaying.Entry {
 		durationMs := item.Duration * 1000
 
-		// Prefer the openSubsonic `positionMs` (exact, sub-second) that
-		// Navidrome reports. Fall back to `minutesAgo` (minute-granular time
-		// since the client last pinged now-playing) only for older servers,
-		// marking it coarse so the client avoids snapping the bar backward.
 		offsetMs := int64(item.MinutesAgo) * int64(time.Minute/time.Millisecond)
 		coarse := true
 		if item.PositionMs != nil {
@@ -413,8 +393,6 @@ func (widget *playingWidget) fetchNavidromeSessions(ctx context.Context, host *P
 			coarse = false
 		}
 
-		// openSubsonic `state` distinguishes playing/paused; older servers
-		// only ever list actively-playing tracks.
 		state := "playing"
 		isPlaying := true
 		if item.State != "" {
@@ -425,9 +403,6 @@ func (widget *playingWidget) fetchNavidromeSessions(ctx context.Context, host *P
 			continue
 		}
 
-		// Navidrome keeps entries in now-playing for a while after a track
-		// ends. Once the offset passes the duration the song is finished -
-		// drop it instead of showing a ghost 100% bar.
 		if durationMs > 0 && offsetMs >= durationMs {
 			continue
 		}
@@ -519,7 +494,6 @@ func (widget *playingWidget) fetchPlexSessions(ctx context.Context, host *Playin
 			session.AlbumTitle = item.ParentTitle
 		}
 
-		// Set display title and subtitle based on format preference
 		widget.setDisplayTitles(&session)
 
 		if *widget.ShowThumbnail {
@@ -602,7 +576,6 @@ func (widget *playingWidget) fetchEmbySessions(ctx context.Context, host *Playin
 		return nil, err
 	}
 
-	// Filter for active clients (CanSeek == true)
 	var filtered jellyfinEmbySessionsResponse
 	for _, item := range response {
 		if item.PlayState != nil && item.PlayState.CanSeek {
@@ -662,7 +635,6 @@ func (widget *playingWidget) parseJellyfinEmbySessions(host *PlayingHostConfig, 
 			session.State = "paused"
 		}
 
-		// Map media type
 		switch strings.ToLower(item.NowPlayingItem.Type) {
 		case "movie":
 			session.MediaType = "movie"
@@ -683,7 +655,6 @@ func (widget *playingWidget) parseJellyfinEmbySessions(host *PlayingHostConfig, 
 			session.MediaType = strings.ToLower(item.NowPlayingItem.Type)
 		}
 
-		// Set display title and subtitle based on format preference
 		widget.setDisplayTitles(&session)
 
 		if *widget.ShowThumbnail {
@@ -712,18 +683,14 @@ func (widget *playingWidget) parseJellyfinEmbySessions(host *PlayingHostConfig, 
 }
 
 func (widget *playingWidget) setDisplayTitles(session *mediaSession) {
-	// Set default display titles
 	session.DisplayTitle = session.Title
 	session.DisplaySubtitle = ""
 	session.EpisodeInfo = ""
 
-	// Handle episodes based on format preference
 	if session.MediaType == "episode" {
 		if widget.EpisodeTitleFormat == "series" {
-			// New default: Show series name with S2E4 as title
 			if session.ShowTitle != "" {
 				session.DisplayTitle = session.ShowTitle
-				// Build episode info (S1E4 format)
 				if session.Season != "" || session.Episode != "" {
 					if session.Season != "" {
 						session.EpisodeInfo = "S" + session.Season
@@ -733,12 +700,9 @@ func (widget *playingWidget) setDisplayTitles(session *mediaSession) {
 					}
 				}
 			}
-			// Episode name becomes subtitle
 			session.DisplaySubtitle = session.Title
 		} else {
-			// Legacy format: episode name as title
 			session.DisplayTitle = session.Title
-			// Series info as subtitle
 			if session.ShowTitle != "" {
 				session.DisplaySubtitle = session.ShowTitle
 				if session.Season != "" || session.Episode != "" {
@@ -752,7 +716,6 @@ func (widget *playingWidget) setDisplayTitles(session *mediaSession) {
 			}
 		}
 	} else if session.MediaType == "track" {
-		// Music tracks: title is track name, subtitle is artist/album
 		session.DisplayTitle = session.Title
 		if session.Artist != "" || session.AlbumTitle != "" {
 			if session.Artist != "" {
@@ -766,7 +729,6 @@ func (widget *playingWidget) setDisplayTitles(session *mediaSession) {
 			}
 		}
 	}
-	// For movies and other types, DisplayTitle and DisplaySubtitle are already set correctly
 }
 
 func (widget *playingWidget) calculateProgress(session *mediaSession) {
@@ -806,7 +768,6 @@ func (widget *playingWidget) Render() template.HTML {
 }
 
 func parseHostURL(rawURL string) (serverType string, baseURL string, err error) {
-	// Check for type prefix
 	if !strings.Contains(rawURL, ":") {
 		slog.Warn(fmt.Sprintf("Host URL missing server type prefix (e.g., 'plex:https://...'). Unable to determine server type for: %s", rawURL))
 		return "", "", fmt.Errorf("host URL missing server type prefix")
@@ -820,23 +781,17 @@ func parseHostURL(rawURL string) (serverType string, baseURL string, err error) 
 
 	serverType = strings.ToLower(parts[0])
 
-	// Check if it's a valid server type
 	if serverType != "plex" && serverType != "jellyfin" && serverType != "emby" && serverType != "navidrome" {
-		// This might be part of a URL like "https://..."
 		slog.Warn(fmt.Sprintf("Host URL missing server type prefix (e.g., 'plex:https://...'). Unable to determine server type for: %s", rawURL))
 		return "", "", fmt.Errorf("unknown server type: %s", serverType)
 	}
 
-	// Reconstruct the URL
 	remainingURL := parts[1]
 	if strings.HasPrefix(remainingURL, "//") {
-		// URL is like "plex://example.com" - add https:
 		baseURL = "https:" + remainingURL
 	} else if strings.HasPrefix(remainingURL, "http://") || strings.HasPrefix(remainingURL, "https://") {
-		// URL is like "plex:https://example.com"
 		baseURL = remainingURL
 	} else {
-		// URL is like "plex:example.com" - add https://
 		baseURL = "https://" + remainingURL
 	}
 

@@ -37,7 +37,7 @@ type contributionGraphWidget struct {
 	Source      string `yaml:"source"`
 	GitLabURL   string `yaml:"gitlab-url"`
 
-	Weeks              []contributionWeek     `yaml:"-"`
+	Weeks              []contributionWeek       `yaml:"-"`
 	MonthLabels        []contributionMonthLabel `yaml:"-"`
 	TotalContributions int                      `yaml:"-"`
 }
@@ -72,19 +72,11 @@ func (widget *contributionGraphWidget) update(ctx context.Context) {
 	var err error
 
 	switch widget.Source {
-	case "github":
-		if widget.Token == "" {
-			weeks, monthLabels, total = buildContributionGrid(make(map[string]int))
-			err = nil
-		} else {
-			weeks, monthLabels, total, err = fetchGithubContributions(ctx, widget.User, widget.Token)
-		}
 	case "gitlab":
 		weeks, monthLabels, total, err = fetchGitlabContributions(ctx, widget.GitLabURL, widget.User, widget.GitLabToken)
 	default:
 		if widget.Token == "" {
 			weeks, monthLabels, total = buildContributionGrid(make(map[string]int))
-			err = nil
 		} else {
 			weeks, monthLabels, total, err = fetchGithubContributions(ctx, widget.User, widget.Token)
 		}
@@ -206,14 +198,12 @@ func buildContributionGrid(days map[string]int) ([]contributionWeek, []contribut
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	// Find the Sunday of the current week
 	currentWeekday := int(today.Weekday())
 	endWeekSunday := today.AddDate(0, 0, -currentWeekday)
 
-	// Start 52 weeks before the current week's Sunday (53 weeks total)
 	startDate := endWeekSunday.AddDate(0, 0, -52*7)
 
-	const colWidth = 12 // 10px cell + 2px gap
+	const colWidth = 12    // 10px cell + 2px gap
 	const minLabelGap = 30 // minimum px between labels to avoid overlap
 
 	weeks := make([]contributionWeek, 53)

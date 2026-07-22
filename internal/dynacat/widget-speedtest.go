@@ -30,9 +30,6 @@ const (
 	speedtestUploadChunk     = 1024 * 1024 // 1 MiB
 )
 
-// Shared test runners are keyed by config so that multiple speedtest widgets with
-// identical settings share a single in-flight test and a single result, instead of
-// each widget hammering the network with its own test.
 var (
 	speedtestRunnersMu sync.Mutex
 	speedtestRunners   = map[string]*speedtestRunner{}
@@ -52,9 +49,7 @@ func speedtestSharedRunner(server string, duration time.Duration, concurrent int
 		server:     server,
 		duration:   duration,
 		concurrent: concurrent,
-		// A new test only starts when the previous one finished more than debounce
-		// ago, so the wave of widget polls that fire together collapses into one test.
-		debounce: 2*duration + 60*time.Second,
+		debounce:   2*duration + 60*time.Second,
 		client: &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: concurrent + 2,
@@ -82,8 +77,6 @@ type speedtestServer struct {
 	PingURL string `json:"pingURL"`
 }
 
-// speedtestRunner owns the actual test and its result. It is shared by every widget
-// with matching config.
 type speedtestRunner struct {
 	server     string
 	duration   time.Duration
@@ -100,9 +93,6 @@ type speedtestRunner struct {
 	selected   *speedtestServer
 }
 
-// trigger starts a test in a detached goroutine and returns immediately, so a long
-// (~35s) run never stalls the page update batch. It is a no-op when a test is already
-// running or one finished within the debounce window, ensuring one test for all widgets.
 func (r *speedtestRunner) trigger() {
 	r.mu.Lock()
 	if r.running {
@@ -175,8 +165,6 @@ func (widget *speedtestWidget) initialize() error {
 	return nil
 }
 
-// update reflects the shared runner's state and asks it to (re)start a test. The runner
-// itself deduplicates concurrent/recent requests, so many widgets cause a single test.
 func (widget *speedtestWidget) update(context.Context) {
 	widget.ContentAvailable = true
 	widget.scheduleNextUpdate()
@@ -195,16 +183,12 @@ func (widget *speedtestWidget) Render() template.HTML {
 	return widget.renderTemplate(widget, speedtestWidgetTemplate)
 }
 
-// UpdateIntervalMs polls quickly while a test runs so the freshly measured numbers
-// replace the loader within seconds, then falls back to the configured interval.
 func (widget *speedtestWidget) UpdateIntervalMs() int64 {
 	if widget.IsTesting() {
 		return (3 * time.Second).Milliseconds()
 	}
 	return widget.widgetBase.UpdateIntervalMs()
 }
-
-// Template accessors (runner is mutex-guarded: its background goroutine writes result concurrently).
 
 func (widget *speedtestWidget) HasResult() bool {
 	res, _, _ := widget.runner.snapshot()
@@ -244,8 +228,6 @@ func (widget *speedtestWidget) formatMetric(get func(*speedtestResult) float64, 
 	return strconv.FormatFloat(get(res), 'f', decimals, 64)
 }
 
-// runTest selects a server (if needed), then measures ping, download and upload.
-
 func (r *speedtestRunner) runTest(ctx context.Context) (*speedtestResult, error) {
 	srv, err := r.resolveServer(ctx)
 	if err != nil {
@@ -278,8 +260,6 @@ func (r *speedtestRunner) runTest(ctx context.Context) (*speedtestResult, error)
 	}, nil
 }
 
-// forgetAutoSelectedServer clears the cached auto-selected server so the next run
-// re-probes and can pick a different, working one. No-op for a manually set server.
 func (r *speedtestRunner) forgetAutoSelectedServer() {
 	if r.server != "" {
 		return
@@ -427,7 +407,7 @@ func (r *speedtestRunner) measurePing(ctx context.Context, srv *speedtestServer)
 			continue
 		}
 		if i == 0 {
-			continue // discard first sample (handshake overhead)
+			continue
 		}
 		total += latency
 		count++
@@ -440,8 +420,6 @@ func (r *speedtestRunner) measurePing(ctx context.Context, srv *speedtestServer)
 	return float64(total.Microseconds()) / float64(count) / 1000.0, nil
 }
 
-// measureStream runs concurrent staggered streams for duration and returns Mbps.
-// upload=false drives GET garbage downloads, upload=true drives POST uploads.
 func (r *speedtestRunner) measureStream(ctx context.Context, srv *speedtestServer, upload bool) (float64, error) {
 	streamCtx, cancel := context.WithTimeout(ctx, r.duration)
 	defer cancel()
@@ -484,9 +462,6 @@ func (r *speedtestRunner) measureStream(ctx context.Context, srv *speedtestServe
 		return 0, fmt.Errorf("invalid elapsed time")
 	}
 
-	// No bytes transferred means the chosen server's endpoint failed (bad path,
-	// refused upload, etc). Report it as an error so the run retries instead of
-	// storing a bogus 0.0 Mbps result.
 	bytesMoved := counter.Load()
 	if bytesMoved == 0 {
 		return 0, fmt.Errorf("no data transferred")
@@ -542,7 +517,6 @@ func (r *speedtestRunner) uploadOnce(ctx context.Context, srv *speedtestServer, 
 	resp.Body.Close()
 }
 
-// speedtestCountingReader counts bytes actually sent by the transport.
 type speedtestCountingReader struct {
 	reader  *bytes.Reader
 	counter *atomic.Int64
