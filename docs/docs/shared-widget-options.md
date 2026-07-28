@@ -14,6 +14,7 @@ All widgets share a common set of configuration options that control their appea
 | cache | string | no | widget-specific |
 | update-interval | string | no | widget-specific |
 | frameless | boolean | no | false |
+| api-id | string | no | |
 
 ## Properties
 
@@ -191,6 +192,18 @@ Example:
 - type: custom-api
   title: Minimal Widget
   frameless: true
+```
+
+### `api-id`
+
+A stable name that makes the widget readable through the [API](api.md) at `/api/v1/widgets/{api-id}`. It must be unique across your whole configuration and has no effect while the API is disabled.
+
+Example:
+
+```yaml
+- type: weather
+  api-id: home-weather
+  location: London, United Kingdom
 ```
 
 ## Combining Options

@@ -9,6 +9,7 @@
 - Added a function in `calendar` widget when showing releases to also show release type
 - Added a function in `calendar` widget to also show current state of the media e.g. grabbed
 - Fixed issue with `search` widget highlighting
+- Added a read-only JSON API for accessing widget data
 
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one

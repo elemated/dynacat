@@ -143,40 +143,11 @@ func (a *application) handleAuthenticationAttempt(w http.ResponseWriter, r *http
 
 	ip := a.addressOfRequest(r)
 
-	a.authAttemptsMu.Lock()
-	exceededRateLimit, retryAfter := func() (bool, int) {
-		attempt, exists := a.failedAuthAttempts[ip]
-		if !exists {
-			a.failedAuthAttempts[ip] = &failedAuthAttempt{
-				attempts: 1,
-				first:    time.Now(),
-			}
-
-			return false, 0
-		}
-
-		elapsed := time.Since(attempt.first)
-		if elapsed < AUTH_RATE_LIMIT_WINDOW && attempt.attempts >= AUTH_RATE_LIMIT_MAX_ATTEMPTS {
-			return true, max(1, int(AUTH_RATE_LIMIT_WINDOW.Seconds()-elapsed.Seconds()))
-		}
-
-		attempt.attempts++
-		return false, 0
-	}()
-
-	if exceededRateLimit {
-		a.authAttemptsMu.Unlock()
+	if exceededRateLimit, retryAfter := a.checkAuthRateLimit(ip); exceededRateLimit {
 		time.Sleep(waitOnFailure)
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 		w.WriteHeader(http.StatusTooManyRequests)
 		return
-	} else {
-		for ipOfAttempt := range a.failedAuthAttempts {
-			if time.Since(a.failedAuthAttempts[ipOfAttempt].first) > AUTH_RATE_LIMIT_WINDOW {
-				delete(a.failedAuthAttempts, ipOfAttempt)
-			}
-		}
-		a.authAttemptsMu.Unlock()
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
@@ -247,6 +218,57 @@ func (a *application) handleAuthenticationAttempt(w http.ResponseWriter, r *http
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"redirect": redirect})
+}
+
+// Counts a login attempt for the IP and reports whether it has run out of allowance.
+// Also prunes attempts that have aged out of the window.
+func (a *application) checkAuthRateLimit(ip string) (bool, int) {
+	a.authAttemptsMu.Lock()
+	defer a.authAttemptsMu.Unlock()
+
+	attempt, exists := a.failedAuthAttempts[ip]
+	if !exists {
+		a.failedAuthAttempts[ip] = &failedAuthAttempt{attempts: 1, first: time.Now()}
+		return false, 0
+	}
+
+	elapsed := time.Since(attempt.first)
+	if elapsed < AUTH_RATE_LIMIT_WINDOW && attempt.attempts >= AUTH_RATE_LIMIT_MAX_ATTEMPTS {
+		return true, max(1, int(AUTH_RATE_LIMIT_WINDOW.Seconds()-elapsed.Seconds()))
+	}
+
+	attempt.attempts++
+
+	for ipOfAttempt := range a.failedAuthAttempts {
+		if time.Since(a.failedAuthAttempts[ipOfAttempt].first) > AUTH_RATE_LIMIT_WINDOW {
+			delete(a.failedAuthAttempts, ipOfAttempt)
+		}
+	}
+
+	return false, 0
+}
+
+// Verifies a username/password pair against the configured users. Password users have no
+// groups, those only ever come from OIDC claims.
+func (a *application) verifyUserPassword(username, password string) *authenticatedUser {
+	if !a.PasswordEnabled || username == "" || password == "" {
+		return nil
+	}
+
+	if len(username) > 50 || len(password) > 100 {
+		return nil
+	}
+
+	u, exists := a.Config.Auth.Users[username]
+	if !exists {
+		return nil
+	}
+
+	if bcrypt.CompareHashAndPassword(u.PasswordHash, []byte(password)) != nil {
+		return nil
+	}
+
+	return &authenticatedUser{Username: username}
 }
 
 func (a *application) getAuthenticatedUser(w http.ResponseWriter, r *http.Request) *authenticatedUser {

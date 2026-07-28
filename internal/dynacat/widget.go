@@ -142,6 +142,9 @@ type widget interface {
 	Render() template.HTML
 	GetType() string
 	GetID() uint64
+	GetAPIID() string
+	GetTitle() string
+	GetError() error
 
 	initialize() error
 	requiresUpdate(*time.Time) bool
@@ -163,6 +166,7 @@ const (
 
 type widgetBase struct {
 	ID                  uint64               `yaml:"-"`
+	APIID               string               `yaml:"api-id"`
 	Providers           *widgetProviders     `yaml:"-"`
 	Type                string               `yaml:"type"`
 	Title               string               `yaml:"title"`
@@ -274,6 +278,18 @@ func (w *widgetBase) GetID() uint64 {
 
 func (w *widgetBase) setID(id uint64) {
 	w.ID = id
+}
+
+func (w *widgetBase) GetAPIID() string {
+	return w.APIID
+}
+
+func (w *widgetBase) GetTitle() string {
+	return w.Title
+}
+
+func (w *widgetBase) GetError() error {
+	return w.Error
 }
 
 func (w *widgetBase) setHideHeader(value bool) {

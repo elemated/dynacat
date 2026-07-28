@@ -51,6 +51,15 @@ type config struct {
 		OIDC            *oidcConfig      `yaml:"oidc"`
 	} `yaml:"auth"`
 
+	API struct {
+		Enabled                bool     `yaml:"enabled"`
+		Token                  string   `yaml:"token"`
+		EnforcePagePermissions *bool    `yaml:"enforce-page-permissions"`
+		RateLimit              *int     `yaml:"rate-limit"`
+		AllowedPages           []string `yaml:"allowed-pages"`
+		AllowedOrigins         []string `yaml:"allowed-origins"`
+	} `yaml:"api"`
+
 	Document struct {
 		Head template.HTML `yaml:"head"`
 	} `yaml:"document"`
@@ -613,6 +622,55 @@ func isConfigStateValid(config *config) error {
 
 		if full > 2 || full == 0 {
 			return fmt.Errorf("page %d must have either 1 or 2 full width columns", i+1)
+		}
+	}
+
+	if err := validateAPIIDsAreUnique(config); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateAPIIDsAreUnique(config *config) error {
+	seen := make(map[string]struct{})
+
+	var walk func(ws widgets) error
+	walk = func(ws widgets) error {
+		for _, w := range ws {
+			if id := w.GetAPIID(); id != "" {
+				if _, taken := seen[id]; taken {
+					return fmt.Errorf("api-id %q is used by more than one widget", id)
+				}
+				seen[id] = struct{}{}
+			}
+
+			switch v := w.(type) {
+			case *groupWidget:
+				if err := walk(v.Widgets); err != nil {
+					return err
+				}
+			case *splitColumnWidget:
+				if err := walk(v.Widgets); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	}
+
+	for i := range config.Pages {
+		page := &config.Pages[i]
+
+		if err := walk(page.HeadWidgets); err != nil {
+			return err
+		}
+
+		for j := range page.Columns {
+			if err := walk(page.Columns[j].Widgets); err != nil {
+				return err
+			}
 		}
 	}
 

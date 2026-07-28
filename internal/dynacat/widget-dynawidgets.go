@@ -37,6 +37,7 @@ type dynawidgetsWidget struct {
 	templateContent   string                       `yaml:"-"`
 	compiledTemplate  *template.Template           `yaml:"-"`
 	CompiledHTML      template.HTML                `yaml:"-"`
+	APIResponse       json.RawMessage              `yaml:"-"`
 }
 
 type dynawidgetsListEntry struct {
@@ -139,13 +140,14 @@ func (widget *dynawidgetsWidget) initialize() error {
 
 func (widget *dynawidgetsWidget) update(ctx context.Context) {
 	widget.Hidden = false
-	compiledHTML, hidden, err := fetchAndRenderCustomAPIRequest(
+	compiledHTML, hidden, rawResponse, err := fetchAndRenderCustomAPIRequest(
 		widget.CustomAPIRequest, widget.Subrequests, widget.Options, widget.compiledTemplate,
 	)
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return
 	}
 
+	widget.APIResponse = rawResponse
 	widget.Hidden = hidden
 	widget.CompiledHTML = rewriteImgSrcs(ctx, compiledHTML, widget.Providers)
 }

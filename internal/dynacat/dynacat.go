@@ -47,9 +47,10 @@ type application struct {
 
 	parsedManifest []byte
 
-	slugToPage   map[string]*page
-	widgetByID   map[uint64]widget
-	widgetToPage map[uint64]*page
+	slugToPage    map[string]*page
+	widgetByID    map[uint64]widget
+	widgetByAPIID map[string]widget
+	widgetToPage  map[uint64]*page
 
 	RequiresAuth           bool
 	OIDCEnabled            bool
@@ -71,6 +72,9 @@ type application struct {
 	sseClients           map[*sseClient]struct{}
 	DynamicUpdateEnabled bool
 
+	apiRateMu       sync.Mutex
+	apiRateRequests map[string]*apiRateWindow
+
 	imageProxyMu   sync.RWMutex
 	imageProxyURLs map[string]imageProxyInfo
 
@@ -86,6 +90,8 @@ func newApplication(c *config) (*application, error) {
 		Config:                 *c,
 		slugToPage:             make(map[string]*page),
 		widgetByID:             make(map[uint64]widget),
+		widgetByAPIID:          make(map[string]widget),
+		apiRateRequests:        make(map[string]*apiRateWindow),
 		widgetToPage:           make(map[uint64]*page),
 		sseClients:             make(map[*sseClient]struct{}),
 		imageProxyURLs:         make(map[string]imageProxyInfo),
@@ -305,6 +311,9 @@ func newApplication(c *config) (*application, error) {
 		registerWidget = func(widget widget) {
 			app.widgetByID[widget.GetID()] = widget
 			app.widgetToPage[widget.GetID()] = page
+			if apiID := widget.GetAPIID(); apiID != "" {
+				app.widgetByAPIID[apiID] = widget
+			}
 			widget.setProviders(providers)
 
 			switch v := widget.(type) {
@@ -351,6 +360,17 @@ func newApplication(c *config) (*application, error) {
 
 		sw.collectBookmarks(app, pageFilter)
 	}
+
+	if config.API.Enabled {
+		// Slugs are only final at this point, so allowed-pages cannot be validated during config parsing.
+		for _, slug := range config.API.AllowedPages {
+			if _, exists := app.slugToPage[slug]; !exists {
+				return nil, fmt.Errorf("api: allowed-pages references unknown page slug %q", slug)
+			}
+		}
+	}
+
+	app.warnAboutAPIExposure()
 
 	config.Theme.CustomCSSFile = app.resolveUserDefinedAssetPath(config.Theme.CustomCSSFile)
 	config.Branding.LogoURL = app.resolveUserDefinedAssetPath(config.Branding.LogoURL)
@@ -936,6 +956,13 @@ func (a *application) server() (func() error, func() error) {
 	if a.todoStorage != nil {
 		mux.HandleFunc("GET /api/todo/{listID}", a.handleTodoLoad)
 		mux.HandleFunc("PUT /api/todo/{listID}", a.handleTodoSave)
+	}
+
+	if a.Config.API.Enabled {
+		mux.HandleFunc("GET /api/v1/pages", a.handleAPIPages)
+		mux.HandleFunc("GET /api/v1/pages/{page}", a.handleAPIPage)
+		mux.HandleFunc("GET /api/v1/widgets/{apiID}", a.handleAPIWidget)
+		mux.HandleFunc("OPTIONS /api/v1/{path...}", a.handleAPIPreflight)
 	}
 
 	mux.HandleFunc("GET /api/editor/schema", a.handleEditorSchema)

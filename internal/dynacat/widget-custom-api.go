@@ -47,6 +47,7 @@ type customAPIWidget struct {
 	Frameless         bool                         `yaml:"frameless"`
 	compiledTemplate  *template.Template           `yaml:"-"`
 	CompiledHTML      template.HTML                `yaml:"-"`
+	APIResponse       json.RawMessage              `yaml:"-"`
 }
 
 func (widget *customAPIWidget) initialize() error {
@@ -87,13 +88,14 @@ func (widget *customAPIWidget) initialize() error {
 
 func (widget *customAPIWidget) update(ctx context.Context) {
 	widget.Hidden = false
-	compiledHTML, hidden, err := fetchAndRenderCustomAPIRequest(
+	compiledHTML, hidden, rawResponse, err := fetchAndRenderCustomAPIRequest(
 		widget.CustomAPIRequest, widget.Subrequests, widget.Options, widget.compiledTemplate,
 	)
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return
 	}
 
+	widget.APIResponse = rawResponse
 	widget.Hidden = hidden
 	widget.CompiledHTML = rewriteImgSrcs(ctx, compiledHTML, widget.Providers)
 }
@@ -309,7 +311,7 @@ func fetchAndRenderCustomAPIRequest(
 	subReqs map[string]*CustomAPIRequest,
 	options customAPIOptions,
 	tmpl *template.Template,
-) (template.HTML, bool, error) {
+) (template.HTML, bool, json.RawMessage, error) {
 	var primaryData *customAPIResponseData
 	subData := make(map[string]*customAPIResponseData, len(subReqs))
 	var err error
@@ -360,7 +362,13 @@ func fetchAndRenderCustomAPIRequest(
 	emptyBody := template.HTML("")
 
 	if err != nil {
-		return emptyBody, false, err
+		return emptyBody, false, nil, err
+	}
+
+	// Kept so the widget can expose the upstream payload through the API.
+	var rawResponse json.RawMessage
+	if primaryData != nil && json.Valid([]byte(primaryData.JSON.Raw)) {
+		rawResponse = json.RawMessage(primaryData.JSON.Raw)
 	}
 
 	data := customAPITemplateData{
@@ -372,7 +380,7 @@ func fetchAndRenderCustomAPIRequest(
 	var templateBuffer bytes.Buffer
 	err = tmpl.Execute(&templateBuffer, &data)
 	if err != nil {
-		return emptyBody, false, err
+		return emptyBody, false, rawResponse, err
 	}
 
 	output := templateBuffer.String()
@@ -381,7 +389,7 @@ func fetchAndRenderCustomAPIRequest(
 		output = strings.ReplaceAll(output, customAPIHideWidgetSentinel, "")
 	}
 
-	return template.HTML(output), hidden, nil
+	return template.HTML(output), hidden, rawResponse, nil
 }
 
 type decoratedGJSONResult struct {
