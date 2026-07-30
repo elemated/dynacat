@@ -207,6 +207,9 @@ server:
 | cache-dir | string | no | .cache |
 | db-path | string | no | /app/assets/dynacat.db |
 | allowed-embed-hosts | array of strings | no | |
+| allow-editing | boolean | no | true |
+| editing-users | array of strings | no | |
+| editing-groups | array of strings | no | |
 
 #### `host`
 The address which the server will listen on. Setting it to `localhost` means that only the machine that the server is running on will be able to access the dashboard. By default it will listen on all interfaces.
@@ -282,6 +285,23 @@ server:
 ```
 
 This sets the `Content-Security-Policy: frame-ancestors` directive to include the listed origins in addition to `'self'`.
+
+#### `allow-editing`
+Whether the web UI editor (the pencil icon that lets you drag, drop and configure widgets and pages directly from the dashboard) is allowed to make changes. Defaults to `true`.
+
+Set it to `false` to disable the web UI editor entirely:
+
+```yaml
+server:
+  allow-editing: false
+```
+
+> [!NOTE]
+>
+> This only controls the web UI editor. Editing the config file directly, or through `$include`d files, always works regardless of this setting.
+
+#### `editing-users`, `editing-groups`
+Restrict who is allowed to use the web UI editor, regardless of `allow-editing`. If neither is set, any user who can already log in is allowed to edit. To limit a specific user to only certain pages, use `restrict-editing` on that user instead, see [Editing Access Control](authentication.md#editing-access-control) for details.
 
 ## Document
 If you want to insert custom HTML into the `<head>` of the document for all pages, you can do so by using the `document` property. Example:

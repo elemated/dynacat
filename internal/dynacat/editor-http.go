@@ -7,7 +7,10 @@ import (
 	"net/http"
 )
 
-const editorMaxBodyBytes = 1 << 20
+const (
+	editorMaxBodyBytes      = 1 << 20
+	editorNotAllowedMessage = "you are not allowed to use the web UI editor"
+)
 
 func (a *application) handleEditorSchema(w http.ResponseWriter, r *http.Request) {
 	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
@@ -27,6 +30,10 @@ func (a *application) handleEditorConfigLoad(w http.ResponseWriter, r *http.Requ
 	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
 		return
 	}
+	if !a.UserAllowedToEdit(a.getAuthenticatedUser(w, r)) {
+		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		return
+	}
 
 	view, err := a.buildEditorConfigView()
 	if err != nil {
@@ -39,6 +46,11 @@ func (a *application) handleEditorConfigLoad(w http.ResponseWriter, r *http.Requ
 
 func (a *application) handleEditorConfigSave(w http.ResponseWriter, r *http.Request) {
 	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
+		return
+	}
+	user := a.getAuthenticatedUser(w, r)
+	if !a.UserAllowedToEdit(user) {
+		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
 		return
 	}
 
@@ -55,9 +67,9 @@ func (a *application) handleEditorConfigSave(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := a.applyEditorMutation(mutation); err != nil {
+	if err := a.applyEditorMutation(user, mutation); err != nil {
 		switch err.(type) {
-		case *editorPermissionError:
+		case *editorPermissionError, *editorDisabledError:
 			writeJSONError(w, http.StatusForbidden, err.Error())
 		case *editorValidationError:
 			writeJSONError(w, http.StatusUnprocessableEntity, err.Error())

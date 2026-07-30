@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -72,6 +73,64 @@ type editorPermissionError struct{ path string }
 
 func (e *editorPermissionError) Error() string {
 	return fmt.Sprintf("cannot write %s: the config directory is read only or lacks write permission", filepath.Base(e.path))
+}
+
+type editorDisabledError struct{}
+
+func (e *editorDisabledError) Error() string {
+	return "editing this page through the web UI is disabled"
+}
+
+// userRestrictEditing returns user's restrict-editing slugs. Only password-based users
+// can have them, since OIDC users have no auth.users entry.
+func (a *application) userRestrictEditing(user *authenticatedUser) []string {
+	if user == nil {
+		return nil
+	}
+	if u := a.Config.Auth.Users[user.Username]; u != nil {
+		return u.RestrictEditing
+	}
+	return nil
+}
+
+// EditingAllowedForPage reports whether user may edit page p (restrict-editing/allow-editing rules).
+func (a *application) EditingAllowedForPage(user *authenticatedUser, p *page) bool {
+	if p == nil {
+		return false
+	}
+	if restrict := a.userRestrictEditing(user); len(restrict) > 0 {
+		return slices.Contains(restrict, p.Slug)
+	}
+	return a.Config.Server.AllowEditing
+}
+
+func (a *application) editingAllowedForPageIndex(user *authenticatedUser, i int) bool {
+	if i < 0 || i >= len(a.Config.Pages) {
+		return false
+	}
+	return a.EditingAllowedForPage(user, &a.Config.Pages[i])
+}
+
+// UserAllowedToEdit reports whether user may use the web UI editor at all (editing-users/editing-groups).
+// Password-based users have no groups, so editing-groups only ever matches OIDC users.
+func (a *application) UserAllowedToEdit(user *authenticatedUser) bool {
+	users := a.Config.Server.EditingUsers
+	groups := a.Config.Server.EditingGroups
+	if len(users) == 0 && len(groups) == 0 {
+		return true
+	}
+	if user == nil {
+		return false
+	}
+	if slices.Contains(users, user.Username) {
+		return true
+	}
+	for _, group := range groups {
+		if slices.Contains(user.Groups, group) {
+			return true
+		}
+	}
+	return false
 }
 
 func isWriteBlockedError(err error) bool {
@@ -214,7 +273,20 @@ func widgetNodeToView(w *yaml.Node) editorWidgetView {
 	return wv
 }
 
-func (a *application) applyEditorMutation(m editorMutation) error {
+func (a *application) applyEditorMutation(user *authenticatedUser, m editorMutation) error {
+	switch m.Op {
+	case "addPage", "editStyling", "deleteThemePreset":
+		// Not scoped to an existing page, so a user restricted to specific pages
+		// can't do them and editing must be allowed globally.
+		if len(a.userRestrictEditing(user)) > 0 || !a.Config.Server.AllowEditing {
+			return &editorDisabledError{}
+		}
+	default:
+		if !a.editingAllowedForPageIndex(user, m.Page) {
+			return &editorDisabledError{}
+		}
+	}
+
 	mainPath := a.configPath
 	mainDoc, err := loadYAMLDocument(mainPath)
 	if err != nil {

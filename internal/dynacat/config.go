@@ -40,6 +40,9 @@ type config struct {
 		BaseURL           string       `yaml:"base-url"`
 		DBPath            string       `yaml:"db-path"`
 		AllowedEmbedHosts []string     `yaml:"allowed-embed-hosts"`
+		AllowEditing      bool         `yaml:"allow-editing"`
+		EditingUsers      []string     `yaml:"editing-users"`
+		EditingGroups     []string     `yaml:"editing-groups"`
 		trustedProxyNets  []*net.IPNet `yaml:"-"`
 	} `yaml:"server"`
 
@@ -103,9 +106,10 @@ type oidcConfig struct {
 }
 
 type user struct {
-	Password           string `yaml:"password"`
-	PasswordHashString string `yaml:"password-hash"`
-	PasswordHash       []byte `yaml:"-"`
+	Password           string   `yaml:"password"`
+	PasswordHashString string   `yaml:"password-hash"`
+	PasswordHash       []byte   `yaml:"-"`
+	RestrictEditing    []string `yaml:"restrict-editing"`
 }
 
 type page struct {
@@ -152,6 +156,7 @@ func newConfigFromYAML(contents []byte) (*config, error) {
 
 	config := &config{}
 	config.Server.Port = 8080
+	config.Server.AllowEditing = true
 
 	err = yaml.Unmarshal(contents, config)
 	if err != nil {
