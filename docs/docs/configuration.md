@@ -1534,6 +1534,24 @@ Alternatively, you can also define the values within your `dynacat.yml` via the 
       hide: false
 ```
 
+This also works for grouping child containers under a parent, same as with labels — the "main" container needs an `id` and each "child" needs a matching `parent`:
+
+```yaml
+- type: docker-containers
+  containers:
+    cloud_service:
+      name: Cloud
+      url: https://mydomain.com
+      icon: si:googlecloud
+      id: cloudreve
+    cloud_service_postgresql:
+      name: cloud.postgresql
+      parent: cloudreve
+    cloud_service_redis:
+      name: cloud.redis
+      parent: cloudreve
+```
+
 For services with multiple containers you can specify a `dynacat.id` on the "main" container and `dynacat.parent` on each "child" container:
 
 <details>

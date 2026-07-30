@@ -1,4 +1,5 @@
 # Changes for 3.0.0
+- Documented `id`/`parent` grouping for the `containers` property in `docker-containers` widget -> https://github.com/Panonim/dynacat/issues/134
 - Fixed an issue where subrequests were not detected properly in `dynawidgets`
 - Fixed `dynawidgets` protocol handling 
 - Added an option to visually edit your configuration
