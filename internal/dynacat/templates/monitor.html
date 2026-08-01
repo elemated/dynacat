@@ -36,6 +36,7 @@
     <div class="text-truncate{{ if ne .StatusStyle "ok" }} color-negative{{ end }}">{{ .StatusLabel }} • {{ .Status.ResponseTime.Milliseconds | formatNumber }}ms</div>
     {{- end }}
 </div>
+{{ if .History }}{{ template "monitor-history" . }}{{ end }}
 {{ if eq .StatusStyle "ok" }}
 <div class="monitor-site-status-icon" {{- if .Description }} data-popover-type="text" data-popover-position="above" data-popover-text="{{ if .Status.Error }}{{ .Status.Error }}{{ else }}{{ .StatusLabel }} • {{ .Status.ResponseTime.Milliseconds | formatNumber }}ms{{ end }}" aria-label="{{ .StatusLabel }}"{{ end }}>
     <svg fill="var(--color-positive)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">

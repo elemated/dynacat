@@ -2092,10 +2092,20 @@ You can hover over the "ERROR" text to view more information.
 | sites | array | yes | |
 | style | string | no | |
 | show-failing-only | boolean | no | false |
+| show-history | boolean | no | false |
 | update-interval | string | no | 2m |
 
 ##### `show-failing-only`
 Shows only a list of failing sites when set to `true`.
+
+##### `show-history`
+When set to `true`, a small strip of ticks is shown on the right of each site, one tick per status check, oldest on the left and newest on the right. Ticks use your theme's `positive-color` when the check was OK and `negative-color` when it failed.
+
+The strip holds the last 15 checks and nothing older than an hour, so how far back it reaches depends on your `update-interval` - with the default of `2m` it covers the last 30 minutes, with `4m` it covers the full hour. Sites with `disabled: true` are not tracked.
+
+> [!NOTE]
+>
+> The history is kept in memory only, meaning that it is lost when Dynacat restarts.
 
 ##### `style`
 Used to change the appearance of the widget. Possible values are `compact`.

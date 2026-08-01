@@ -12,6 +12,7 @@
 - Fixed issue with `search` widget highlighting
 - Added a read-only JSON API for accessing widget data
 - Added option to mark `monitor` as disabled
+- Added `show-history` option to `monitor` widget showing a bar of the last hour of status checks
 
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one

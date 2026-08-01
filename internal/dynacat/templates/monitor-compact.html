@@ -29,6 +29,7 @@
     <div class="text-truncate size-h5">{{ .Description }}</div>
     {{- end }}
 </div>
+{{ if .History }}{{ template "monitor-history" . }}{{ end }}
 <div class="monitor-site-status-cluster-compact">
 {{ if eq .StatusStyle "disabled" }}
     <div class="size-h5 monitor-site-response-time-compact color-subdue">{{ .StatusLabel }}</div>
