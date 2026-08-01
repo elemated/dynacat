@@ -3,7 +3,7 @@
     { "id": "home", "title": "Welcome" },
     { "id": "search", "title": "Search", "file": "docs/search.md" },
     { "section": "reference" },
-    { "id": "api", "title": "API", "file": "docs/api.md" },
+    { "id": "api", "title": "Api", "file": "docs/api.md" },
     { "id": "authentication", "title": "Authentication", "file": "docs/authentication.md" },
     { "id": "configuration", "title": "Configuration", "file": "docs/configuration.md" },
     { "id": "changelog", "title": "Changelog", "file": "docs/changelog.md" },
