@@ -2120,6 +2120,7 @@ Properties for each site:
 | timeout | string | no | 3s |
 | allow-insecure | boolean | no | false |
 | same-tab | boolean | no | false |
+| disabled | boolean | no | false |
 | alt-status-codes | array | no | |
 | basic-auth | object | no | |
 
@@ -2158,6 +2159,17 @@ Whether to ignore invalid/self-signed certificates.
 `same-tab`
 
 Whether to open the link in the same or a new tab.
+
+`disabled`
+
+Set to `true` to stop monitoring this site without removing it from the config. The site is still shown in the list, but no request is made to it and it's displayed with a "Disabled" status instead of "OK"/"ERROR". Disabled sites are never counted towards `show-failing-only`.
+
+```yaml
+sites:
+  - title: Jellyfin
+    url: https://jellyfin.yourdomain.com
+    disabled: true
+```
 
 `alt-status-codes`
 

@@ -11,6 +11,7 @@
 - Added a function in `calendar` widget to also show current state of the media e.g. grabbed
 - Fixed issue with `search` widget highlighting
 - Added a read-only JSON API for accessing widget data
+- Added option to mark `monitor` as disabled
 
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one

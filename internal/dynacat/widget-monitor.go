@@ -31,6 +31,7 @@ type monitorWidget struct {
 		Description        string          `yaml:"description"`
 		Icon               customIconField `yaml:"icon"`
 		SameTab            bool            `yaml:"same-tab"`
+		Disabled           bool            `yaml:"disabled"`
 		StatusText         string          `yaml:"-"`
 		StatusLabel        string          `yaml:"-"`
 		StatusStyle        string          `yaml:"-"`
@@ -81,10 +82,23 @@ func (widget *monitorWidget) setProviders(providers *widgetProviders) {
 }
 
 func (widget *monitorWidget) update(ctx context.Context) {
-	requests := make([]*SiteStatusRequest, len(widget.Sites))
+	enabledIndices := make([]int, 0, len(widget.Sites))
+	requests := make([]*SiteStatusRequest, 0, len(widget.Sites))
 
 	for i := range widget.Sites {
-		requests[i] = widget.Sites[i].SiteStatusRequest
+		site := &widget.Sites[i]
+
+		if site.Disabled {
+			site.Status = &siteStatus{}
+			site.URL = site.DefaultURL
+			site.StatusText = "Disabled"
+			site.StatusLabel = "Disabled"
+			site.StatusStyle = "disabled"
+			continue
+		}
+
+		enabledIndices = append(enabledIndices, i)
+		requests = append(requests, site.SiteStatusRequest)
 	}
 
 	statuses, err := fetchStatusForSites(requests)
@@ -95,9 +109,9 @@ func (widget *monitorWidget) update(ctx context.Context) {
 
 	widget.HasFailing = false
 
-	for i := range widget.Sites {
+	for j, i := range enabledIndices {
 		site := &widget.Sites[i]
-		status := &statuses[i]
+		status := &statuses[j]
 		site.Status = status
 
 		if !slices.Contains(site.AltStatusCodes, status.Code) && (status.Code >= 400 || status.Error != nil) {
