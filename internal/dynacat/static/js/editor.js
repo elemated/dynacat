@@ -93,6 +93,20 @@ async function apiGet(path) {
     return res.json();
 }
 
+async function apiPost(path, body) {
+    const res = await fetch(API + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+}
+
+const convertToYAML = async (value) => (await apiPost("/convert", { to: "yaml", value })).text;
+const convertToValue = async (text) => (await apiPost("/convert", { to: "value", text })).value;
+
 async function commit(mutation) {
     const res = await fetch(`${API}/config`, {
         method: "POST",
@@ -508,7 +522,7 @@ function openLayoutModal() {
 
 function openNewWidgetModal(type, path) {
     const initial = path.length >= 3 ? { frameless: "true" } : {};
-    buildWidgetModal(type, initial, (fields, rawFields) =>
+    buildWidgetModal(type, initial, {}, (fields, rawFields) =>
         save({ op: "addWidget", page: state.pageIndex, path, widgetType: type, fields, rawFields })
     );
 }
@@ -516,12 +530,12 @@ function openNewWidgetModal(type, path) {
 function openWidgetModal(path) {
     const widget = widgetAtPath(path);
     if (!widget) return;
-    buildWidgetModal(widget.type, widget.values || {}, (fields, rawFields) =>
+    buildWidgetModal(widget.type, widget.values || {}, widget.structured || {}, (fields, rawFields) =>
         save({ op: "editWidget", page: state.pageIndex, path, fields, rawFields })
     );
 }
 
-function buildWidgetModal(type, values, onSave) {
+function buildWidgetModal(type, values, structured, onSave) {
     const schema = state.schemaByType[type];
     if (!schema) return toast(`Unknown widget: ${type}`, "negative");
 
@@ -535,7 +549,7 @@ function buildWidgetModal(type, values, onSave) {
 
         const control = field.name === "autocomplete-provider"
             ? renderAutocompleteProviderField(field, values["autocomplete-provider"], values["autocomplete"])
-            : renderField(field, values[field.name]);
+            : renderField(field, values[field.name], structured[field.name]);
 
         controls.push(control);
         (field.advanced ? advanced : basic).append(control.wrapper);
@@ -551,14 +565,19 @@ function buildWidgetModal(type, values, onSave) {
             const value = c.read();
             if (c.extra) Object.assign(fields, c.extra());
             if (value === undefined) continue;
-            if (c.field.kind === "yaml") rawFields[c.field.name] = value;
+            // An unchecked box is only written when the key is already in the config,
+            // so unchecking persists as `false` without adding noise everywhere else.
+            if (value === false && !(c.field.name in values)) continue;
+            if (c.field.kind === "yaml" || (c.isYAML && c.isYAML())) rawFields[c.field.name] = value;
             else fields[c.field.name] = value;
         }
         onSave(fields, rawFields);
     });
 }
 
-function renderField(field, value) {
+function renderField(field, value, structured) {
+    if (field.kind === "list") return renderListField(field, structured, typeof value === "string" ? value : "");
+
     if (field.kind === "checkbox") {
         const input = document.createElement("input");
         input.type = "checkbox";
@@ -588,7 +607,7 @@ function renderField(field, value) {
     } else if (field.kind === "yaml") {
         input = document.createElement("textarea");
         input.className = "editor-input editor-textarea";
-        input.value = value || "";
+        input.value = yamlSeed(value);
         read = () => input.value.trim() || undefined;
     } else if (field.kind === "number") {
         input = inputEl("number");
@@ -605,6 +624,303 @@ function renderField(field, value) {
     if (field.kind === "icon") wrapper.append(iconPreview(input));
 
     return { field, wrapper, read };
+}
+
+//
+// List field (repeated entries)
+//
+
+const SUMMARY_KEYS = ["title", "name", "url", "repository", "symbol", "timezone", "shortcut", "label"];
+
+function renderListField(field, structured, rawValue) {
+    const entries = Array.isArray(structured) ? structured : [];
+    let openIndex = -1;
+    let dirty = false;
+    let converting = false;
+    // Entries we can't map onto the schema (a map such as $include, or shorthand
+    // strings) can only be edited as YAML.
+    const listable = (v) => Array.isArray(v) &&
+        (!!field.itemKind || v.every((i) => i !== null && typeof i === "object" && !Array.isArray(i)));
+    let yamlMode = !listable(structured) && (!!rawValue.trim() || Array.isArray(structured));
+
+    // Entries are edited on a copy; the pristine one tells us which keys already
+    // existed, so an explicit `false` survives while an untouched one stays out.
+    const originals = new WeakMap();
+    const adopt = (list) => list.map((i) => {
+        if (i === null || typeof i !== "object") return i;
+        const copy = { ...i };
+        originals.set(copy, i);
+        return copy;
+    });
+    let items = adopt(entries);
+
+    const wrapper = div("editor-field");
+    const labelRow = div("editor-list-label");
+    const label = document.createElement("label");
+    label.className = "editor-field-label";
+    label.append(field.label);
+    if (field.required) label.append(requiredStar());
+    const toggle = button("", "editor-list-toggle");
+    labelRow.append(label, toggle);
+
+    const listEl = div("editor-list");
+    const addBtn = button(`Add ${singularize(field.label)}`, "editor-list-add");
+    addBtn.prepend(iconSpan(iconPlus));
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "editor-input editor-textarea";
+    textarea.value = rawValue;
+    textarea.addEventListener("input", () => (dirty = true));
+
+    const syncMode = () => {
+        listEl.hidden = addBtn.hidden = yamlMode;
+        textarea.hidden = !yamlMode;
+        toggle.textContent = converting ? "Converting..." : yamlMode ? "Edit as list" : "Edit as YAML";
+        toggle.disabled = converting;
+    };
+
+    toggle.addEventListener("click", async () => {
+        if (converting) return;
+        converting = true;
+        syncMode();
+        try {
+            if (!yamlMode) {
+                textarea.value = await convertToYAML(items);
+                yamlMode = true;
+            } else if (!textarea.value.trim()) {
+                items = [];
+                openIndex = -1;
+                yamlMode = false;
+            } else {
+                const value = await convertToValue(textarea.value);
+                if (!listable(value)) {
+                    toast(`${field.label} can only be edited as YAML`, "negative");
+                } else {
+                    items = adopt(value);
+                    openIndex = -1;
+                    yamlMode = false;
+                }
+            }
+        } catch (e) {
+            toast(e.message, "negative");
+        } finally {
+            converting = false;
+            render();
+        }
+    });
+
+    const render = () => {
+        listEl.textContent = "";
+        items.forEach((item, i) => listEl.append(field.itemKind ? scalarRow(item, i) : itemCard(item, i)));
+        syncMode();
+    };
+
+    const touch = () => {
+        dirty = true;
+        syncMode();
+    };
+
+    const moveItem = (from, to) => {
+        if (from === to || to < 0 || to >= items.length) return;
+        items.splice(to, 0, items.splice(from, 1)[0]);
+        openIndex = -1;
+        touch();
+        render();
+    };
+
+    function removeButton(i) {
+        const b = toolButton("Remove", iconTrash, () => {
+            items.splice(i, 1);
+            openIndex = -1;
+            touch();
+            render();
+        });
+        b.classList.add("editor-list-remove");
+        return b;
+    }
+
+    function scalarRow(item, i) {
+        const row = div("editor-list-row");
+        const control = renderField({ ...field, kind: field.itemKind, label: "" }, item);
+        control.wrapper.classList.add("editor-list-row-field");
+        row.addEventListener("input", () => {
+            items[i] = control.read();
+            touch();
+        });
+        row.append(control.wrapper, removeButton(i));
+        return row;
+    }
+
+    function itemCard(item, i) {
+        const card = div("editor-list-card");
+        const head = div("editor-list-head");
+        const grip = div("editor-list-grip");
+        grip.innerHTML = iconGrip;
+        const thumb = img("editor-list-thumb", "");
+        const summary = div("editor-list-summary");
+        const chevron = div("editor-list-chevron");
+        chevron.innerHTML = iconChevron;
+        head.append(grip, thumb, summary, chevron, removeButton(i));
+
+        const refreshHead = () => {
+            summary.textContent = itemSummary(item, i);
+            applyIcon(thumb, item.icon || "");
+            thumb.style.display = item.icon ? "" : "none";
+        };
+        refreshHead();
+
+        head.addEventListener("click", () => {
+            openIndex = openIndex === i ? -1 : i;
+            render();
+        });
+        card.append(head);
+        setupItemDrag(card, grip, i);
+
+        if (openIndex !== i) return card;
+
+        card.classList.add("editor-list-card-open");
+        const body = div("editor-list-body");
+        const advanced = div("editor-fields");
+        const controls = [];
+
+        for (const f of field.item) {
+            const control = renderField(f, item[f.name], item[f.name]);
+            controls.push(control);
+            (f.advanced ? advanced : body).append(control.wrapper);
+        }
+        if (advanced.children.length) body.append(collapsible("Advanced", advanced));
+
+        const original = originals.get(item) || {};
+
+        const sync = () => {
+            for (const c of controls) {
+                const value = c.read();
+                if (c.field.kind === "list" && value === undefined) continue;
+                const drop = value === undefined || value === "" ||
+                    (value === false && !(c.field.name in original));
+                if (drop) delete item[c.field.name];
+                else item[c.field.name] = c.field.kind === "yaml" ? { $yaml: value } : value;
+            }
+            refreshHead();
+            touch();
+        };
+        body.addEventListener("input", sync);
+        body.addEventListener("change", sync);
+
+        autofillTitleFromURL(controls);
+        card.append(body);
+        return card;
+    }
+
+    function setupItemDrag(card, grip, i) {
+        grip.addEventListener("click", (e) => e.stopPropagation());
+        grip.addEventListener("mousedown", () => (card.draggable = true));
+        card.addEventListener("dragstart", (e) => {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", "");
+            card.classList.add("editor-list-dragging");
+            state.listDrag = { list: listEl, index: i };
+        });
+        card.addEventListener("dragend", () => {
+            card.draggable = false;
+            card.classList.remove("editor-list-dragging");
+            marker.remove();
+            state.listDrag = null;
+        });
+    }
+
+    // The whole list is the drop target so the pointer never leaves it between cards.
+    const marker = div("editor-list-marker");
+    const isOwnDrag = () => state.listDrag && state.listDrag.list === listEl;
+
+    const listCards = () => [...listEl.children].filter((c) => c.classList.contains("editor-list-card"));
+
+    const dropIndexAt = (y) => {
+        const cards = listCards();
+        for (let i = 0; i < cards.length; i++) {
+            const box = cards[i].getBoundingClientRect();
+            if (y < box.top + box.height / 2) return i;
+        }
+        return cards.length;
+    };
+
+    listEl.addEventListener("dragover", (e) => {
+        if (!isOwnDrag()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        const before = listCards()[dropIndexAt(e.clientY)];
+        before ? listEl.insertBefore(marker, before) : listEl.append(marker);
+    });
+
+    listEl.addEventListener("drop", (e) => {
+        if (!isOwnDrag()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const from = state.listDrag.index;
+        const at = dropIndexAt(e.clientY);
+        marker.remove();
+        state.listDrag = null;
+        moveItem(from, at > from ? at - 1 : at);
+    });
+
+    addBtn.addEventListener("click", () => {
+        items.push(field.itemKind ? "" : {});
+        openIndex = items.length - 1;
+        touch();
+        render();
+    });
+
+    wrapper.append(labelRow, listEl, addBtn, textarea);
+    render();
+
+    return {
+        field,
+        wrapper,
+        isYAML: () => yamlMode,
+        // Untouched fields are left out entirely so their YAML keeps its comments and formatting.
+        read: () => {
+            if (!dirty) return undefined;
+            if (!yamlMode) return items;
+            return textarea.value.trim() === rawValue.trim() ? undefined : textarea.value.trim() || undefined;
+        },
+    };
+}
+
+function autofillTitleFromURL(controls) {
+    const titleInput = controls.find((c) => c.field.name === "title" || c.field.name === "name")?.wrapper.querySelector("input");
+    const urlInput = controls.find((c) => c.field.name === "url")?.wrapper.querySelector("input");
+    if (!titleInput || !urlInput) return;
+
+    titleInput.addEventListener("input", () => (titleInput.dataset.touched = "1"));
+    urlInput.addEventListener("input", () => {
+        if (titleInput.dataset.touched || titleInput.value.trim()) return;
+        titleInput.value = titleFromURL(urlInput.value);
+    });
+}
+
+function titleFromURL(url) {
+    const host = (url.match(/^(?:[a-z][a-z0-9+.-]*:\/\/)?([^/?#]+)/i) || [])[1] || "";
+    const labels = host.split(":")[0].split(".").filter((l) => l && l !== "www");
+    const name = labels[0] || "";
+    return name ? name[0].toUpperCase() + name.slice(1) : "";
+}
+
+function itemSummary(item, i) {
+    const key = SUMMARY_KEYS.find((k) => typeof item[k] === "string" && item[k].trim());
+    return key ? item[key] : `Entry ${i + 1}`;
+}
+
+function singularize(label) {
+    return label.replace(/ies$/, "y").replace(/s$/, "").toLowerCase();
+}
+
+function yamlSeed(value) {
+    if (value === undefined || value === null) return "";
+    if (typeof value === "string") return value;
+    if (value.$yaml !== undefined) return value.$yaml;
+    return JSON.stringify(value);
 }
 
 function renderSearchEngineField(field, value) {
@@ -664,27 +980,53 @@ function renderAutocompleteProviderField(field, value, autocompleteValue) {
 function iconPreview(input) {
     const preview = img("editor-icon-preview", "");
     const update = () => {
-        const url = resolveIconURL(input.value.trim());
-        preview.src = url;
-        preview.style.display = url ? "" : "none";
+        preview.style.display = applyIcon(preview, input.value.trim()) ? "" : "none";
     };
     input.addEventListener("input", update);
     update();
     return preview;
 }
 
+// Sets src plus the same flat-icon class the widget templates use for auto-invert icons.
+function applyIcon(el, value) {
+    const { url, autoInvert } = resolveIcon(value);
+    el.classList.toggle("flat-icon", autoInvert);
+    el.onerror = /cdn\.jsdelivr\.net\/gh\/(selfhst\/icons|homarr-labs\/dashboard-icons)\/svg\//.test(url)
+        ? () => { el.onerror = null; el.src = url.replace("/svg/", "/webp/").replace(/\.svg$/, ".webp"); }
+        : null;
+    el.src = url;
+    return url;
+}
+
 function resolveIconURL(value) {
-    if (!value) return "";
-    value = value.replace(/^auto-invert /, "");
-    const [prefix, name] = value.split(":");
-    if (!name) return value;
-    const base = name.split(".")[0];
+    return resolveIcon(value).url;
+}
+
+// Mirrors newCustomIconField in config-fields.go, keep both in sync.
+function resolveIcon(value) {
+    let autoInvert = false;
+    if (!value) return { url: "", autoInvert };
+    if (value.startsWith("auto-invert ")) {
+        autoInvert = true;
+        value = value.slice("auto-invert ".length);
+    }
+
+    const colon = value.indexOf(":");
+    if (colon < 0) return { url: /^\/?assets\//.test(value) ? `${PD.baseURL}/${value.replace(/^\//, "")}` : value, autoInvert };
+    const prefix = value.slice(0, colon);
+    const icon = value.slice(colon + 1);
+
+    const dot = icon.indexOf(".");
+    const base = dot < 0 ? icon : icon.slice(0, dot);
+    let ext = dot < 0 ? "svg" : icon.slice(dot + 1);
+    if (ext !== "svg" && ext !== "png") ext = "svg";
+
     switch (prefix) {
-        case "si": return `https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${base}.svg`;
-        case "di": return `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/${base}.svg`;
-        case "mdi": return `https://cdn.jsdelivr.net/npm/@mdi/svg@latest/svg/${base}.svg`;
-        case "sh": return `https://cdn.jsdelivr.net/gh/selfhst/icons/svg/${base}.svg`;
-        default: return value;
+        case "si": return { url: `https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${base}.svg`, autoInvert: true };
+        case "di": return { url: `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/${ext}/${base}.${ext}`, autoInvert };
+        case "mdi": return { url: `https://cdn.jsdelivr.net/npm/@mdi/svg@latest/svg/${base}.svg`, autoInvert: true };
+        case "sh": return { url: `https://cdn.jsdelivr.net/gh/selfhst/icons/${ext}/${base}.${ext}`, autoInvert };
+        default: return { url: value, autoInvert };
     }
 }
 
@@ -1311,4 +1653,6 @@ function toolButton(title, svg, onClick) {
 const iconPlus = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>`;
 const iconPencil = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z"/></svg>`;
 const iconCog = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.751-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.397-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.241.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.991l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.281Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>`;
+const iconGrip = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>`;
+const iconChevron = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>`;
 const iconTrash = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>`;

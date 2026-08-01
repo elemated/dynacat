@@ -583,6 +583,182 @@ select.editor-input {
     margin-top: 4px;
 }
 
+.editor-list-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.editor-list-toggle {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-text-subdue);
+    font: inherit;
+    font-size: 1.2rem;
+    cursor: pointer;
+}
+
+.editor-list-toggle:hover {
+    color: var(--color-primary);
+}
+
+.editor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Author `display` beats the UA `[hidden]` rule, so hiding these needs an explicit override. */
+.editor-list[hidden],
+.editor-list-add[hidden] {
+    display: none;
+}
+
+.editor-list-card {
+    border: 1px solid var(--color-separator);
+    border-radius: var(--border-radius);
+    background: var(--color-widget-background-highlight);
+}
+
+.editor-list-dragging {
+    opacity: 0.4;
+}
+
+.editor-list-marker {
+    height: 2px;
+    margin: -4px 0;
+    border-radius: 2px;
+    background: var(--color-primary);
+}
+
+.editor-list-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    cursor: pointer;
+}
+
+.editor-list-grip {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    color: var(--color-text-subdue);
+    cursor: grab;
+}
+
+.editor-list-grip:hover {
+    color: var(--color-text-highlight);
+}
+
+.editor-list-card[draggable="true"] .editor-list-grip {
+    cursor: grabbing;
+}
+
+.editor-list-grip svg,
+.editor-list-chevron svg {
+    width: 100%;
+    height: 100%;
+}
+
+.editor-list-thumb {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+.editor-list-summary {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1.3rem;
+    color: var(--color-text-highlight);
+}
+
+.editor-list-chevron {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    color: var(--color-text-subdue);
+    transition: transform 0.15s;
+}
+
+.editor-list-card-open .editor-list-chevron {
+    transform: rotate(90deg);
+}
+
+.editor-list-remove:hover {
+    color: var(--color-negative);
+}
+
+.editor-list-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 10px 12px;
+    border-top: 1px solid var(--color-separator);
+}
+
+/* Inputs sit on the card background, so they need a darker fill to read as inputs. */
+.editor-modal .editor-list-body .editor-input,
+.editor-modal .editor-list-row .editor-input {
+    background: var(--color-background);
+}
+
+.editor-list-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.editor-list-row-field {
+    flex: 1;
+}
+
+.editor-list-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    padding: 8px;
+    border: 1px dashed var(--color-separator);
+    border-radius: var(--border-radius);
+    /* Same reason as the inputs above: the separator border matches the card background exactly. */
+    background: var(--color-background);
+    color: var(--color-text-subdue);
+    font: inherit;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.editor-list-add:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.editor-list-add svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* Nested adds sit inside an already busy card, so they drop to a plain text link. */
+.editor-list-body .editor-list-add {
+    align-self: flex-start;
+    justify-content: flex-start;
+    width: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    transition: color 0.15s;
+}
+
 .editor-collapsible summary {
     cursor: pointer;
     padding: 6px 0;

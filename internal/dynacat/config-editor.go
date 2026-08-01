@@ -45,10 +45,11 @@ type editorColumnView struct {
 }
 
 type editorWidgetView struct {
-	Type    string             `json:"type"`
-	Title   string             `json:"title"`
-	Values  map[string]string  `json:"values"`
-	Widgets []editorWidgetView `json:"widgets,omitempty"`
+	Type       string             `json:"type"`
+	Title      string             `json:"title"`
+	Values     map[string]string  `json:"values"`
+	Structured map[string]any     `json:"structured,omitempty"`
+	Widgets    []editorWidgetView `json:"widgets,omitempty"`
 }
 
 type editorMutation struct {
@@ -268,6 +269,16 @@ func widgetNodeToView(w *yaml.Node) editorWidgetView {
 			wv.Values[key] = nodeToText(val)
 		default:
 			wv.Values[key] = nodeToText(val)
+		}
+
+		if key != "widgets" && val.Kind == yaml.SequenceNode {
+			var decoded []any
+			if err := val.Decode(&decoded); err == nil {
+				if wv.Structured == nil {
+					wv.Structured = map[string]any{}
+				}
+				wv.Structured[key] = decoded
+			}
 		}
 	}
 	return wv
@@ -913,9 +924,33 @@ func valueNode(v any) *yaml.Node {
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: strconv.FormatFloat(x, 'f', -1, 64)}
 	case string:
 		return scalarNode(x)
+	case []any:
+		seq := sequenceNode()
+		for _, item := range x {
+			seq.Content = append(seq.Content, valueNode(item))
+		}
+		return seq
+	case map[string]any:
+		// Escape hatch for list entries whose sub-field is edited as raw YAML.
+		if raw, ok := x["$yaml"].(string); ok && len(x) == 1 {
+			if parsed, err := parseYAMLValue(raw); err == nil {
+				return parsed
+			}
+		}
+		m := newMappingNode()
+		for _, k := range orderedFieldKeys(x) {
+			addPair(m, k, valueNode(x[k]))
+		}
+		return m
 	default:
 		return scalarNode(fmt.Sprintf("%v", v))
 	}
+}
+
+func orderedFieldKeys(m map[string]any) []string {
+	keys := sortedKeys(m)
+	slices.SortStableFunc(keys, func(a, b string) int { return fieldOrderRank(a) - fieldOrderRank(b) })
+	return keys
 }
 
 func isEmptyValue(v any) bool {
@@ -924,6 +959,10 @@ func isEmptyValue(v any) bool {
 		return true
 	case string:
 		return strings.TrimSpace(x) == ""
+	case []any:
+		return len(x) == 0
+	case map[string]any:
+		return len(x) == 0
 	default:
 		return false
 	}

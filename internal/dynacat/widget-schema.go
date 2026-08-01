@@ -2,16 +2,19 @@ package dynacat
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 )
 
 type widgetFieldSchema struct {
-	Name     string   `json:"name"`
-	Label    string   `json:"label"`
-	Kind     string   `json:"kind"` // text|number|checkbox|select|duration|icon|yaml
-	Required bool     `json:"required,omitempty"`
-	Advanced bool     `json:"advanced,omitempty"`
-	Options  []string `json:"options,omitempty"`
+	Name     string              `json:"name"`
+	Label    string              `json:"label"`
+	Kind     string              `json:"kind"` // text|number|checkbox|select|duration|icon|yaml|list
+	Required bool                `json:"required,omitempty"`
+	Advanced bool                `json:"advanced,omitempty"`
+	Options  []string            `json:"options,omitempty"`
+	Item     []widgetFieldSchema `json:"item,omitempty"`
+	ItemKind string              `json:"itemKind,omitempty"`
 }
 
 type widgetTypeSchema struct {
@@ -74,14 +77,51 @@ type fieldAnnotation struct {
 	Advanced bool
 	Kind     string
 	Options  []string
-	Required bool
 }
 
 var alwaysAdvancedFields = map[string]bool{
 	"title": true, "title-icon": true, "title-url": true, "hide-header": true,
 	"css-class": true, "cache": true, "update-interval": true, "lazy-load": true,
-	"frameless": true,
+	"frameless": true, "api-id": true,
 }
+
+// Fields the user must fill in for the widget to work. Fields of a list entry are addressed
+// as "<list-field>.<entry-field>". Mirrors the "required" column in docs/docs/configuration.md.
+var requiredFields = map[string][]string{
+	"bookmarks":       {"groups", "groups.title", "groups.links", "groups.links.title", "groups.links.url"},
+	"calendar":        {"hosts.url", "hosts.token"},
+	"clock":           {"timezones.timezone"},
+	"custom-api":      {"template"},
+	"dns-stats":       {"url"},
+	"dynawidgets":     {"widget"},
+	"extension":       {"url"},
+	"html":            {"source"},
+	"iframe":          {"source"},
+	"latest-media":    {"hosts", "hosts.url", "hosts.token"},
+	"markets":         {"markets", "markets.symbol", "stocks.symbol"},
+	"monitor":         {"sites", "sites.title", "sites.url"},
+	"playing":         {"hosts", "hosts.url", "hosts.token"},
+	"reddit":          {"subreddit"},
+	"releases":        {"repositories", "repositories.repository"},
+	"repository":      {"repository"},
+	"rss":             {"feeds", "feeds.url"},
+	"search":          {"bangs.shortcut", "bangs.url"},
+	"server-stats":    {"servers.url"},
+	"torrenting":      {"hosts", "hosts.url"},
+	"twitch-channels": {"channels"},
+	"videos":          {"channels"},
+	"weather":         {"location"},
+}
+
+// Per-entry fields tucked behind the "Advanced" toggle of a list card.
+var itemAdvancedFields = map[string]bool{
+	"check-url": true, "error-url": true, "method": true, "timeout": true,
+	"allow-insecure": true, "basic-auth": true, "token": true, "headers": true,
+	"alt-status-codes": true, "same-tab": true, "target": true, "hide-arrow": true,
+	"disabled": true, "item-link-prefix": true, "public-url": true, "invert-colors": true,
+}
+
+const maxListDepth = 2
 
 var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	"calendar": {
@@ -91,15 +131,8 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"hour-format": {Options: []string{"24h", "12h"}},
 	},
 	"weather": {
-		"location":    {Required: true},
 		"hour-format": {Options: []string{"12h", "24h"}},
 		"units":       {Options: []string{"metric", "imperial"}},
-	},
-	"iframe": {
-		"source": {Required: true},
-	},
-	"html": {
-		"source": {Required: true},
 	},
 	"hacker-news": {
 		"sort-by":               {Options: []string{"top", "new", "best"}},
@@ -107,7 +140,6 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"comments-url-template": {Advanced: true},
 	},
 	"releases": {
-		"repositories": {Required: true},
 		"token":        {Advanced: true},
 		"gitlab-token": {Advanced: true},
 	},
@@ -122,7 +154,6 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"proxy":                {Advanced: true},
 	},
 	"reddit": {
-		"subreddit":             {Required: true},
 		"sort-by":               {Options: []string{"hot", "new", "top", "rising"}},
 		"top-period":            {Options: []string{"hour", "day", "week", "month", "year", "all"}},
 		"style":                 {Options: []string{"horizontal-cards", "vertical-cards"}},
@@ -133,11 +164,9 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"app-auth":              {Advanced: true},
 	},
 	"rss": {
-		"feeds": {Required: true},
 		"style": {Options: []string{"detailed-list", "horizontal-cards", "horizontal-cards-2"}},
 	},
 	"monitor": {
-		"sites": {Required: true},
 		"style": {Options: []string{"compact"}},
 	},
 	"twitch-channels": {
@@ -151,21 +180,19 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"token":          {Advanced: true},
 	},
 	"repository": {
-		"repository": {Required: true},
-		"token":      {Advanced: true},
+		"token": {Advanced: true},
 	},
 	"search": {
 		"search-engine":         {Options: []string{"duckduckgo", "google", "bing", "perplexity", "kagi", "startpage", "qwant", "brave", "custom"}},
 		"autocomplete-provider": {Options: []string{"duckduckgo", "brave", "custom"}},
 	},
 	"extension": {
-		"url":                              {Required: true},
 		"fallback-content-type":            {Options: []string{"html"}},
 		"headers":                          {Advanced: true},
 		"allow-potentially-dangerous-html": {Advanced: true},
 	},
 	"dns-stats": {
-		"service":        {Required: true, Options: []string{"adguard", "pihole", "pihole-v6", "technitium", "blocky"}},
+		"service":        {Options: []string{"adguard", "pihole", "pihole-v6", "technitium", "blocky"}},
 		"hour-format":    {Options: []string{"12h", "24h"}},
 		"token":          {Advanced: true},
 		"username":       {Advanced: true},
@@ -173,7 +200,7 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"allow-insecure": {Advanced: true},
 	},
 	"custom-api": {
-		"template":       {Required: true, Kind: "yaml"},
+		"template":       {Kind: "yaml"},
 		"subrequests":    {Advanced: true},
 		"method":         {Advanced: true},
 		"body":           {Advanced: true},
@@ -182,7 +209,6 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"allow-insecure": {Advanced: true},
 	},
 	"dynawidgets": {
-		"widget":         {Required: true},
 		"repo":           {Advanced: true},
 		"subrequests":    {Advanced: true},
 		"method":         {Advanced: true},
@@ -203,18 +229,8 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"id":      {Advanced: true},
 	},
 	"playing": {
-		"hosts":                {Required: true},
 		"play-state":           {Options: []string{"indicator", "text"}},
 		"episode-title-format": {Options: []string{"series", "episode"}},
-	},
-	"latest-media": {
-		"hosts": {Required: true},
-	},
-	"torrenting": {
-		"hosts": {Required: true},
-	},
-	"speedtest": {
-		"server": {Required: true},
 	},
 }
 
@@ -224,7 +240,7 @@ func widgetSchema(meta widgetTypeMeta) (widgetTypeSchema, error) {
 		return widgetTypeSchema{}, err
 	}
 
-	fields := reflectWidgetFields(reflect.TypeOf(w).Elem())
+	fields := reflectWidgetFields(reflect.TypeOf(w).Elem(), 0)
 	ann := fieldAnnotations[meta.Type]
 
 	for i := range fields {
@@ -246,8 +262,9 @@ func widgetSchema(meta widgetTypeMeta) (widgetTypeSchema, error) {
 			f.Kind = "select"
 			f.Options = a.Options
 		}
-		f.Required = a.Required
 	}
+
+	markRequiredFields(fields, "", requiredFields[meta.Type])
 
 	return widgetTypeSchema{
 		Type:   meta.Type,
@@ -256,6 +273,17 @@ func widgetSchema(meta widgetTypeMeta) (widgetTypeSchema, error) {
 		Hidden: hiddenWidgetTypes[meta.Type],
 		Fields: fields,
 	}, nil
+}
+
+func markRequiredFields(fields []widgetFieldSchema, prefix string, required []string) {
+	for i := range fields {
+		path := prefix + fields[i].Name
+		fields[i].Required = slices.Contains(required, path)
+		if fields[i].Required {
+			fields[i].Advanced = false
+		}
+		markRequiredFields(fields[i].Item, path+".", required)
+	}
 }
 
 func allWidgetSchemas() []widgetTypeSchema {
@@ -272,7 +300,7 @@ var deprecatedSchemaFields = map[string]bool{
 	"autocomplete-url": true,
 }
 
-func reflectWidgetFields(t reflect.Type) []widgetFieldSchema {
+func reflectWidgetFields(t reflect.Type, depth int) []widgetFieldSchema {
 	var fields []widgetFieldSchema
 
 	for i := 0; i < t.NumField(); i++ {
@@ -285,17 +313,64 @@ func reflectWidgetFields(t reflect.Type) []widgetFieldSchema {
 		}
 
 		if inline && ft.Kind() == reflect.Struct {
-			fields = append(fields, reflectWidgetFields(ft)...)
+			fields = append(fields, reflectWidgetFields(ft, depth)...)
 			continue
+		}
+		// List entries often come from external structs with no yaml tags, which yaml.v3 maps by lowercased name.
+		if name == "" && depth > 0 && f.IsExported() {
+			name = strings.ToLower(f.Name)
 		}
 		if name == "" || name == "-" || name == "type" || !f.IsExported() || deprecatedSchemaFields[name] {
 			continue
 		}
 
-		fields = append(fields, widgetFieldSchema{Name: name, Kind: fieldKind(f.Type)})
+		fields = append(fields, reflectField(name, f.Type, depth))
 	}
 
 	return fields
+}
+
+func reflectField(name string, t reflect.Type, depth int) widgetFieldSchema {
+	field := widgetFieldSchema{Name: name, Kind: fieldKind(t)}
+	if field.Kind != "yaml" || depth >= maxListDepth {
+		return field
+	}
+
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Slice {
+		return field
+	}
+
+	elem := t.Elem()
+	for elem.Kind() == reflect.Ptr {
+		elem = elem.Elem()
+	}
+
+	if elemKind := fieldKind(elem); elemKind != "yaml" {
+		field.Kind, field.ItemKind = "list", elemKind
+		return field
+	}
+	if elem.Kind() != reflect.Struct {
+		return field
+	}
+
+	item := reflectWidgetFields(elem, depth+1)
+	if len(item) == 0 {
+		return field
+	}
+
+	for i := range item {
+		item[i].Label = humanizeFieldName(item[i].Name)
+		item[i].Advanced = itemAdvancedFields[item[i].Name]
+	}
+	slices.SortStableFunc(item, func(a, b widgetFieldSchema) int {
+		return fieldOrderRank(a.Name) - fieldOrderRank(b.Name)
+	})
+	field.Kind, field.Item = "list", item
+
+	return field
 }
 
 func parseYAMLTag(tag string) (name string, inline bool) {
@@ -313,6 +388,7 @@ var (
 	iconFieldType     = reflect.TypeOf(customIconField{})
 	durationFieldType = reflect.TypeOf(durationField(0))
 	intervalFieldType = reflect.TypeOf(updateIntervalField(0))
+	colorFieldType    = reflect.TypeOf(hslColorField{})
 )
 
 func fieldKind(t reflect.Type) string {
@@ -325,6 +401,8 @@ func fieldKind(t reflect.Type) string {
 		return "icon"
 	case durationFieldType, intervalFieldType:
 		return "duration"
+	case colorFieldType:
+		return "text"
 	}
 
 	switch t.Kind() {
@@ -340,12 +418,25 @@ func fieldKind(t reflect.Type) string {
 	}
 }
 
+var fieldLabelAcronyms = map[string]string{"url": "URL", "urls": "URLs", "css": "CSS", "api": "API", "dns": "DNS", "id": "ID", "rss": "RSS", "html": "HTML"}
+
 func humanizeFieldName(name string) string {
 	words := strings.Split(name, "-")
 	for i, w := range words {
-		if w != "" {
+		if a, ok := fieldLabelAcronyms[w]; ok {
+			words[i] = a
+		} else if w != "" {
 			words[i] = strings.ToUpper(w[:1]) + w[1:]
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+var preferredFieldOrder = []string{"title", "name", "url", "repository", "symbol", "timezone", "shortcut", "label", "icon", "description"}
+
+func fieldOrderRank(name string) int {
+	if i := slices.Index(preferredFieldOrder, name); i >= 0 {
+		return i
+	}
+	return len(preferredFieldOrder)
 }

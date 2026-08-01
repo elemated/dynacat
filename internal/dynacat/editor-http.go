@@ -83,6 +83,68 @@ func (a *application) handleEditorConfigSave(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type editorConvertRequest struct {
+	To    string          `json:"to"`
+	Value json.RawMessage `json:"value"`
+	Text  string          `json:"text"`
+}
+
+// Converts a list field between its structured form and its YAML text so the
+// editor can offer both views without a YAML library in the browser.
+func (a *application) handleEditorConvert(w http.ResponseWriter, r *http.Request) {
+	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
+		return
+	}
+	if !a.UserAllowedToEdit(a.getAuthenticatedUser(w, r)) {
+		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, editorMaxBodyBytes)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	var req editorConvertRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	switch req.To {
+	case "yaml":
+		var value any = []any{}
+		if len(req.Value) > 0 {
+			if err := json.Unmarshal(req.Value, &value); err != nil {
+				writeJSONError(w, http.StatusBadRequest, "invalid value")
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"text": nodeToText(valueNode(value))})
+	case "value":
+		node, err := parseYAMLValue(req.Text)
+		if err != nil {
+			writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		var value any
+		if err := node.Decode(&value); err != nil {
+			writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			writeJSONError(w, http.StatusUnprocessableEntity, "unsupported YAML structure")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]json.RawMessage{"value": encoded})
+	default:
+		writeJSONError(w, http.StatusBadRequest, "unknown conversion")
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
