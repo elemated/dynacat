@@ -96,7 +96,7 @@ func (a *application) userRestrictEditing(user *authenticatedUser) []string {
 
 // EditingAllowedForPage reports whether user may edit page p (restrict-editing/allow-editing rules).
 func (a *application) EditingAllowedForPage(user *authenticatedUser, p *page) bool {
-	if p == nil {
+	if p == nil || !a.canUserAccessPage(user, p) {
 		return false
 	}
 	if restrict := a.userRestrictEditing(user); len(restrict) > 0 {
@@ -134,6 +134,16 @@ func (a *application) UserAllowedToEdit(user *authenticatedUser) bool {
 	return false
 }
 
+// Whether the user can edit anything at all. restrict-editing users keep their pages even
+// when allow-editing is off, which is how EditingAllowedForPage treats them.
+func (a *application) userCanEditAnything(user *authenticatedUser) bool {
+	if !a.UserAllowedToEdit(user) {
+		return false
+	}
+
+	return a.Config.Server.AllowEditing || len(a.userRestrictEditing(user)) > 0
+}
+
 func isWriteBlockedError(err error) bool {
 	return os.IsPermission(err) || errors.Is(err, syscall.EROFS)
 }
@@ -142,7 +152,7 @@ type editorValidationError struct{ err error }
 
 func (e *editorValidationError) Error() string { return e.err.Error() }
 
-func (a *application) buildEditorConfigView() (editorConfigView, error) {
+func (a *application) buildEditorConfigView(user *authenticatedUser) (editorConfigView, error) {
 	mainPath := a.configPath
 	mainDoc, err := loadYAMLDocument(mainPath)
 	if err != nil {
@@ -156,6 +166,13 @@ func (a *application) buildEditorConfigView() (editorConfigView, error) {
 
 	view := editorConfigView{}
 	for i := range pagesNode.Content {
+		// Positions have to line up with the page indices mutations are addressed by, so a
+		// page the user cannot see is emitted as an empty slot rather than skipped.
+		if i < len(a.Config.Pages) && !a.canUserAccessPage(user, &a.Config.Pages[i]) {
+			view.Pages = append(view.Pages, editorPageView{Options: map[string]string{}})
+			continue
+		}
+
 		path, _, pageNode, err := resolvePageNode(mainDoc, mainPath, i)
 		if err != nil {
 			return editorConfigView{}, err
@@ -337,7 +354,9 @@ func (a *application) applyEditorMutation(user *authenticatedUser, m editorMutat
 		if err != nil {
 			return err
 		}
-		applyPageFields(pageNode, m.Fields)
+		if err := applyPageFields(pageNode, m.Fields); err != nil {
+			return err
+		}
 		setBlockStyleDeep(pageNode)
 		return a.writeConfigCandidate(path, marshalDocument(doc))
 	}
@@ -494,7 +513,7 @@ func isIntPrefix(prefix, full []int) bool {
 	return true
 }
 
-func applyPageFields(pageNode *yaml.Node, fields map[string]any) {
+func applyPageFields(pageNode *yaml.Node, fields map[string]any) error {
 	for _, k := range sortedKeys(fields) {
 		v := fields[k]
 		if k == "name" && isEmptyValue(v) {
@@ -504,8 +523,25 @@ func applyPageFields(pageNode *yaml.Node, fields map[string]any) {
 			removeMappingKey(pageNode, k)
 			continue
 		}
-		setPageMappingKey(pageNode, k, valueNode(v))
+		node := valueNode(v)
+		if err := rejectIncludeDirective(k, node); err != nil {
+			return err
+		}
+		setPageMappingKey(pageNode, k, node)
 	}
+
+	return nil
+}
+
+// parseYAMLIncludes is a textual preprocessor that matches any line, so an include smuggled in
+// as a key or inside a multi-line value would make the loader read, and removePage delete, an
+// arbitrary file.
+func rejectIncludeDirective(key string, node *yaml.Node) error {
+	if key == "$include" || key == "!include" || configIncludePattern.MatchString(nodeToText(node)) {
+		return &editorValidationError{fmt.Errorf("field %s must not contain an include directive", key)}
+	}
+
+	return nil
 }
 
 func setPageMappingKey(m *yaml.Node, key string, value *yaml.Node) {
@@ -622,6 +658,10 @@ func uniquePageFileName(dir, title string) string {
 }
 
 func (a *application) writeConfigCandidate(path string, candidate []byte) error {
+	if err := checkIncludesStayInConfigDir(candidate, filepath.Dir(a.configPath)); err != nil {
+		return &editorValidationError{err}
+	}
+
 	perm := os.FileMode(0o644)
 	if info, err := os.Stat(path); err == nil {
 		perm = info.Mode()
@@ -643,6 +683,30 @@ func (a *application) writeConfigCandidate(path string, candidate []byte) error 
 	if err != nil {
 		os.WriteFile(path, original, perm)
 		return &editorValidationError{err}
+	}
+
+	return nil
+}
+
+// Second line of defence behind rejectIncludeDirective, covering anything the editor writes.
+func checkIncludesStayInConfigDir(candidate []byte, dir string) error {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, match := range configIncludePattern.FindAllSubmatch(candidate, -1) {
+		target := strings.TrimSpace(string(match[2]))
+
+		path := target
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(absDir, path)
+		}
+
+		abs, err := filepath.Abs(path)
+		if err != nil || !strings.HasPrefix(abs, absDir+string(filepath.Separator)) {
+			return fmt.Errorf("include %q is outside the config directory", target)
+		}
 	}
 
 	return nil
@@ -770,7 +834,11 @@ func applyFieldsToNode(node *yaml.Node, fields map[string]any, rawFields map[str
 			removeMappingKey(node, k)
 			continue
 		}
-		setMappingKey(node, k, valueNode(fields[k]))
+		value := valueNode(fields[k])
+		if err := rejectIncludeDirective(k, value); err != nil {
+			return err
+		}
+		setMappingKey(node, k, value)
 	}
 
 	for _, k := range sortedStringKeys(rawFields) {
@@ -781,6 +849,9 @@ func applyFieldsToNode(node *yaml.Node, fields map[string]any, rawFields map[str
 		parsed, err := parseYAMLValue(rawFields[k])
 		if err != nil {
 			return fmt.Errorf("field %s: %w", k, err)
+		}
+		if err := rejectIncludeDirective(k, parsed); err != nil {
+			return err
 		}
 		setMappingKey(node, k, parsed)
 	}

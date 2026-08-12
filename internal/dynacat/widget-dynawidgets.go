@@ -186,13 +186,8 @@ func dynawidgetsParseTemplate(raw string) (templateContent string, required *dyn
 		return templateContent, nil
 	}
 
-	expanded, err := parseConfigVariables([]byte(requiredRaw))
-	if err != nil {
-		slog.Error("Failed to expand variables in dynawidget required section", "error", err)
-		return templateContent, nil
-	}
-	requiredRaw = string(expanded)
-
+	// Deliberately not run through parseConfigVariables: this block comes from a remote
+	// template, and expanding ${...} there would hand it the host's env vars and secret files.
 	required = &dynawidgetsRequired{}
 	if err := yaml.Unmarshal([]byte(requiredRaw), required); err != nil {
 		slog.Error("Failed to parse dynawidget required section", "error", err)

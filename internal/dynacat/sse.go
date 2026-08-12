@@ -115,7 +115,16 @@ func (a *application) handleImageProxyRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	// The proxied URL comes from remote widget content, so reflecting its content type would
+	// let an upstream serve HTML from this origin.
+	contentType := resp.Header.Get("Content-Type")
+	if extensionFromContentType(contentType) == "" {
+		http.Error(w, "Not an image", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Security-Policy", "sandbox")
 	w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
 	w.WriteHeader(http.StatusOK)
 

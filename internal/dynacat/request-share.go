@@ -3,7 +3,6 @@ package dynacat
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -139,7 +138,7 @@ func doRequestReadAll(client requestDoer, req *http.Request) (int, http.Header, 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimited(resp.Body)
 	if err != nil {
 		return 0, nil, nil, err
 	}

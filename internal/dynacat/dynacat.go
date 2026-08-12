@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -905,6 +906,34 @@ func (a *application) securityHeadersMiddleware(next http.Handler) http.Handler 
 	})
 }
 
+// Blocks cross-site writes such as a form POST to the editor from another website. Browsers
+// always send Origin on unsafe methods; API clients that send none are left alone.
+func sameOriginMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if origin != "" && originHost(origin) != r.Host {
+				http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func originHost(origin string) string {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return ""
+	}
+
+	return parsed.Host
+}
+
 func (a *application) isRequestHTTPS(r *http.Request) bool {
 	if a.Config.Server.HTTPS {
 		return true
@@ -980,10 +1009,12 @@ func (a *application) server() (func() error, func() error) {
 	)
 
 	if a.Config.Server.CacheDir != "" {
-		cacheHandler := http.StripPrefix(
+		// Cached files are fetched from remote widget content and an SVG among them would
+		// otherwise run scripts on this origin when opened directly.
+		cacheHandler := sandboxedHandler(http.StripPrefix(
 			"/.cache",
 			fileServerWithCache(http.Dir(a.Config.Server.CacheDir), REMOTE_IMAGE_CACHE_DURATION),
-		)
+		))
 
 		if a.RequiresAuth {
 			mux.Handle("GET /.cache/{path...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1037,7 +1068,7 @@ func (a *application) server() (func() error, func() error) {
 
 	server := http.Server{
 		Addr:    fmt.Sprintf("%s:%d", a.Config.Server.Host, a.Config.Server.Port),
-		Handler: a.securityHeadersMiddleware(mux),
+		Handler: a.securityHeadersMiddleware(sameOriginMiddleware(mux)),
 	}
 
 	start := func() error {

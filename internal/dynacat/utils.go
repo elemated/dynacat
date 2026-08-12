@@ -2,6 +2,7 @@ package dynacat
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"html/template"
 	"math"
@@ -94,6 +95,31 @@ var urlSchemePattern = regexp.MustCompile(`^[a-z]+:\/\/`)
 
 var pageFileNamePattern = regexp.MustCompile(`[^a-z0-9-]`)
 
+// Widgets that authenticate through the query string (?token=, ?api_key=, ?X-Plex-Token=)
+// would otherwise leak the credential anywhere the URL is echoed back, such as fetch errors.
+var secretQueryParamPattern = regexp.MustCompile(`(?i)([?&][^=&\s"']*(?:token|key|secret|password|auth)[^=&\s"']*=)[^&\s"']*`)
+
+func redactSecretQueryParams(value string) string {
+	if !strings.Contains(value, "=") {
+		return value
+	}
+
+	return secretQueryParamPattern.ReplaceAllString(value, "${1}redacted")
+}
+
+func redactedError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	redacted := redactSecretQueryParams(err.Error())
+	if redacted == err.Error() {
+		return err
+	}
+
+	return errors.New(redacted)
+}
+
 func stripURLScheme(url string) string {
 	return urlSchemePattern.ReplaceAllString(url, "")
 }
@@ -158,6 +184,13 @@ func fileServerWithCache(fs http.FileSystem, cacheDuration time.Duration) http.H
 		// TODO: fix always setting cache control even if the file doesn't exist
 		w.Header().Set("Cache-Control", cacheControlValue)
 		server.ServeHTTP(w, r)
+	})
+}
+
+func sandboxedHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "sandbox")
+		next.ServeHTTP(w, r)
 	})
 }
 

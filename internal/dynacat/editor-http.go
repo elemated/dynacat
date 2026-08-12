@@ -30,12 +30,13 @@ func (a *application) handleEditorConfigLoad(w http.ResponseWriter, r *http.Requ
 	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
 		return
 	}
-	if !a.UserAllowedToEdit(a.getAuthenticatedUser(w, r)) {
+	user := a.getAuthenticatedUser(w, r)
+	if !a.userCanEditAnything(user) {
 		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
 		return
 	}
 
-	view, err := a.buildEditorConfigView()
+	view, err := a.buildEditorConfigView(user)
 	if err != nil {
 		slog.Error("Editor config load failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -49,7 +50,7 @@ func (a *application) handleEditorConfigSave(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	user := a.getAuthenticatedUser(w, r)
-	if !a.UserAllowedToEdit(user) {
+	if !a.userCanEditAnything(user) {
 		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
 		return
 	}
@@ -95,7 +96,7 @@ func (a *application) handleEditorConvert(w http.ResponseWriter, r *http.Request
 	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
 		return
 	}
-	if !a.UserAllowedToEdit(a.getAuthenticatedUser(w, r)) {
+	if !a.userCanEditAnything(a.getAuthenticatedUser(w, r)) {
 		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
 		return
 	}

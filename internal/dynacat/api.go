@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,10 +28,6 @@ const apiMaxWalkDepth = 12
 // the second line of defence for a widget that stores a credential in a data field.
 var apiSecretNameParts = []string{"token", "password", "passwd", "secret", "credential", "bearer", "apikey"}
 var apiSecretNames = []string{"key", "auth", "cookie", "authorization"}
-
-// Some widgets build image URLs with the upstream credential in the query string
-// (for example ?X-Plex-Token=... in the media widgets), so strip those before serializing.
-var apiSecretQueryParamPattern = regexp.MustCompile(`(?i)([?&][^=&]*(?:token|key|secret|password|auth)[^=&]*=)[^&]*`)
 
 type apiWidgetView struct {
 	APIID   string          `json:"api-id,omitempty"`
@@ -500,7 +495,7 @@ func apiOpenValue(v reflect.Value, depth int) any {
 
 	switch v.Kind() {
 	case reflect.String:
-		return apiRedactSecretQueryParams(v.String())
+		return redactSecretQueryParams(v.String())
 	case reflect.Struct:
 		// Nested structs go back through the same config-versus-data split, so a widget
 		// cannot expose config by reaching it through one of its data fields.
@@ -596,12 +591,4 @@ func apiIsSecretName(name string) bool {
 	}
 
 	return false
-}
-
-func apiRedactSecretQueryParams(value string) string {
-	if !strings.Contains(value, "=") {
-		return value
-	}
-
-	return apiSecretQueryParamPattern.ReplaceAllString(value, "${1}redacted")
 }

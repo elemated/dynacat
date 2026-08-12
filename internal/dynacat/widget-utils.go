@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"math/rand/v2"
 	"net/http"
 	"regexp"
@@ -46,6 +47,24 @@ var (
 )
 
 const defaultClientTimeout = 5 * time.Second
+
+// Upstreams are not trusted to stop sending, so every buffered response body is bounded.
+const maxResponseBytes = 16 << 20
+
+var errResponseTooLarge = errors.New("response exceeds the maximum size of 16MB")
+
+func readLimited(body io.Reader) ([]byte, error) {
+	contents, err := io.ReadAll(io.LimitReader(body, maxResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+
+	if len(contents) > maxResponseBytes {
+		return nil, errResponseTooLarge
+	}
+
+	return contents, nil
+}
 
 var defaultHTTPClient = &http.Client{
 	Transport: &http.Transport{

@@ -157,8 +157,11 @@ func (c *imageCache) downloadAndCacheWithClient(ctx context.Context, rawURL stri
 		return "", err
 	}
 
-	_, copyErr := io.Copy(file, resp.Body)
+	written, copyErr := io.Copy(file, io.LimitReader(resp.Body, maxResponseBytes+1))
 	closeErr := file.Close()
+	if copyErr == nil && written > maxResponseBytes {
+		copyErr = errResponseTooLarge
+	}
 	if copyErr != nil {
 		_ = os.Remove(tmpPath)
 		return "", copyErr

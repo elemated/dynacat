@@ -377,7 +377,7 @@ func (w *widgetBase) withCacheOnTheHour() *widgetBase {
 }
 
 func (w *widgetBase) withNotice(err error) *widgetBase {
-	w.Notice = err
+	w.Notice = redactedError(err)
 
 	return w
 }
@@ -387,7 +387,8 @@ func (w *widgetBase) withError(err error) *widgetBase {
 		w.ContentAvailable = true
 	}
 
-	w.Error = err
+	// Fetch errors carry the request URL, which for some widgets holds the upstream credential.
+	w.Error = redactedError(err)
 
 	return w
 }

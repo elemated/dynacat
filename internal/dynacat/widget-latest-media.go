@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -513,16 +512,6 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatestFromParent(
 
 // --- Helpers ---
 
-func stripAPIKeysFromError(err error) string {
-	if err == nil {
-		return ""
-	}
-	errStr := err.Error()
-	errStr = regexp.MustCompile(`api_key=[^&\s"']+`).ReplaceAllString(errStr, "api_key=***")
-	errStr = regexp.MustCompile(`X-Plex-Token=[^&\s"']+`).ReplaceAllString(errStr, "X-Plex-Token=***")
-	return errStr
-}
-
 func containsString(slice []string, s string) bool {
 	for _, v := range slice {
 		if v == s {
@@ -623,7 +612,7 @@ func (widget *latestMediaWidget) resolveCachedImageURL(ctx context.Context, orig
 	}
 
 	if err != nil {
-		slog.Debug(fmt.Sprintf("failed to cache %s image, using proxy", kind), "hash", hash, "error", stripAPIKeysFromError(err))
+		slog.Debug(fmt.Sprintf("failed to cache %s image, using proxy", kind), "hash", hash, "error", redactedError(err))
 	}
 	return proxyURL
 }
