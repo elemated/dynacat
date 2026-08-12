@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -88,6 +89,7 @@ type speedtestRunner struct {
 	running    bool
 	started    bool
 	result     *speedtestResult
+	previous   *speedtestResult
 	resultTime time.Time
 	lastErr    error
 	selected   *speedtestServer
@@ -116,6 +118,7 @@ func (r *speedtestRunner) trigger() {
 
 		r.mu.Lock()
 		if err == nil {
+			r.previous = r.result
 			r.result = res
 			r.resultTime = time.Now()
 		}
@@ -129,6 +132,12 @@ func (r *speedtestRunner) snapshot() (res *speedtestResult, started bool, err er
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.result, r.started, r.lastErr
+}
+
+func (r *speedtestRunner) previousSnapshot() *speedtestResult {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.previous
 }
 
 type speedtestWidget struct {
@@ -226,6 +235,62 @@ func (widget *speedtestWidget) formatMetric(get func(*speedtestResult) float64, 
 		return "-"
 	}
 	return strconv.FormatFloat(get(res), 'f', decimals, 64)
+}
+
+// speedtestChange describes how a metric moved compared to the previous completed test.
+type speedtestChange struct {
+	Percent  float64
+	Improved bool
+	Up       bool
+}
+
+func (widget *speedtestWidget) DownloadChange() *speedtestChange {
+	return widget.metricChange(func(r *speedtestResult) float64 { return r.DownloadMbps }, false)
+}
+
+func (widget *speedtestWidget) UploadChange() *speedtestChange {
+	return widget.metricChange(func(r *speedtestResult) float64 { return r.UploadMbps }, false)
+}
+
+func (widget *speedtestWidget) PingChange() *speedtestChange {
+	return widget.metricChange(func(r *speedtestResult) float64 { return r.PingMs }, true)
+}
+
+// metricChange compares the current result against the previous one. lowerIsBetter flips which
+// direction counts as an improvement (used for ping, where a lower value is better). Returns nil
+// when there's no previous run to compare against yet, or when the previous run's reading is too
+// close to zero to make a meaningful baseline (e.g. an unreliable cold-start measurement) — either
+// case would otherwise produce a nonsensical swing like "+3090%".
+func (widget *speedtestWidget) metricChange(get func(*speedtestResult) float64, lowerIsBetter bool) *speedtestChange {
+	current, _, _ := widget.runner.snapshot()
+	previous := widget.runner.previousSnapshot()
+	if current == nil || previous == nil {
+		return nil
+	}
+
+	prevVal := get(previous)
+	if prevVal < 1 {
+		return nil
+	}
+
+	curVal := get(current)
+	percent := (curVal - prevVal) / prevVal * 100
+	if math.Abs(percent) > 1000 {
+		return nil
+	}
+
+	up := curVal > prevVal
+	improved := up != lowerIsBetter
+
+	if curVal == prevVal {
+		improved = false
+	}
+
+	return &speedtestChange{
+		Percent:  percent,
+		Improved: improved,
+		Up:       up,
+	}
 }
 
 func (r *speedtestRunner) runTest(ctx context.Context) (*speedtestResult, error) {

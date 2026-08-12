@@ -13,6 +13,8 @@
 - Added a read-only JSON API for accessing widget data
 - Added option to mark `monitor` as disabled
 - Added `show-history` option to `monitor` widget showing a bar of the last hour of status checks
+- Added a comparison to the previous run in `speedtest` widget
+- Fixed a few security issues
 
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one
