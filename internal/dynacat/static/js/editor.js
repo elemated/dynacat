@@ -120,16 +120,18 @@ async function commit(mutation) {
 }
 
 async function save(mutation) {
-    if (!(await commit(mutation))) return;
+    if (!(await commit(mutation))) return false;
     state.config = await apiGet("/config");
     renderCanvas();
+    return true;
 }
 
 async function commitAndNavigate(mutation, navigate) {
     const before = await serverGeneration();
-    if (!(await commit(mutation))) return;
+    if (!(await commit(mutation))) return false;
     await waitForServerReload(before);
-    navigate();
+    await navigate();
+    return true;
 }
 
 async function serverGeneration() {
@@ -473,17 +475,18 @@ function openEditPageModal() {
     openModal("Page options", sections, () => {
         const fields = {};
         for (const c of controls) fields[c.key] = c.read();
-        savePageOptions(fields);
+        return savePageOptions(fields);
     });
 }
 
 async function savePageOptions(fields) {
     const before = await serverGeneration();
-    if (!(await commit({ op: "editPage", page: state.pageIndex, fields }))) return;
+    if (!(await commit({ op: "editPage", page: state.pageIndex, fields }))) return false;
     await waitForServerReload(before);
     const cfg = await apiGet("/config").catch(() => null);
     const updated = cfg && cfg.pages[state.pageIndex];
     location.href = updated ? `${PD.baseURL}/${updated.slug}` : `${PD.baseURL}/`;
+    return true;
 }
 
 function openLayoutModal() {
@@ -508,7 +511,7 @@ function openLayoutModal() {
 
     openModal("New page", [labeled("Name", title), body], () => {
         const name = title.value.trim() || "New Page";
-        commitAndNavigate({ op: "addPage", title: name, layout: chosen }, async () => {
+        return commitAndNavigate({ op: "addPage", title: name, layout: chosen }, async () => {
             const cfg = await apiGet("/config").catch(() => null);
             const created = cfg?.pages.find((p) => p.title === name);
             location.href = created ? `${PD.baseURL}/${created.slug}` : `${PD.baseURL}/`;
@@ -571,7 +574,7 @@ function buildWidgetModal(type, values, structured, onSave) {
             if (c.field.kind === "yaml" || (c.isYAML && c.isYAML())) rawFields[c.field.name] = value;
             else fields[c.field.name] = value;
         }
-        onSave(fields, rawFields);
+        return onSave(fields, rawFields);
     });
 }
 
@@ -1164,22 +1167,25 @@ function openStylingModal() {
 
     cancel.addEventListener("click", () => overlay.remove());
 
-    saveBtn.addEventListener("click", () => {
+    saveBtn.addEventListener("click", async () => {
         const { themeOut, brandingOut } = collect();
-        overlay.remove();
-        if (selectedKey === "") saveStyling(themeOut, brandingOut);
-        else savePreset(selectedKey, themeOut);
+        saveBtn.disabled = true;
+        try {
+            const ok = selectedKey === "" ? await saveStyling(themeOut, brandingOut) : await savePreset(selectedKey, themeOut);
+            if (ok) overlay.remove();
+        } finally {
+            saveBtn.disabled = false;
+        }
     });
 
     saveAsNew.addEventListener("click", () => {
-        promptModal("Name for the new theme", "Theme name", (name) => {
+        promptModal("Name for the new theme", "Theme name", async (name) => {
             if (presets.some((p) => p.key === name)) {
                 toast(`A theme named "${name}" already exists`, "negative");
                 return false;
             }
             const { themeOut } = collect();
-            overlay.remove();
-            savePreset(name, themeOut);
+            if (await savePreset(name, themeOut)) overlay.remove();
             return true;
         });
     });
@@ -1187,9 +1193,8 @@ function openStylingModal() {
     deleteBtn.addEventListener("click", () => {
         const key = selectedKey;
         const message = key === "" ? "Reset the default theme to the built-in default?" : `Delete the theme "${key}"?`;
-        confirmAction(message, () => {
-            overlay.remove();
-            deletePreset(key);
+        confirmAction(message, async () => {
+            if (await deletePreset(key)) overlay.remove();
         });
     });
 
@@ -1229,23 +1234,26 @@ function themeSwatch(values) {
 
 async function saveStyling(theme, branding) {
     const before = await serverGeneration();
-    if (!(await commit({ op: "editStyling", theme, branding }))) return;
+    if (!(await commit({ op: "editStyling", theme, branding }))) return false;
     await waitForServerReload(before);
     location.reload();
+    return true;
 }
 
 async function savePreset(key, theme) {
     const before = await serverGeneration();
-    if (!(await commit({ op: "editStyling", presetKey: key, theme }))) return;
+    if (!(await commit({ op: "editStyling", presetKey: key, theme }))) return false;
     await waitForServerReload(before);
     location.reload();
+    return true;
 }
 
 async function deletePreset(key) {
     const before = await serverGeneration();
-    if (!(await commit({ op: "deleteThemePreset", presetKey: key }))) return;
+    if (!(await commit({ op: "deleteThemePreset", presetKey: key }))) return false;
     await waitForServerReload(before);
     location.reload();
+    return true;
 }
 
 function sectionTitle(text) {
@@ -1480,9 +1488,13 @@ function openModal(title, sections, onSave) {
     const cancel = button("Cancel", "editor-btn");
     const saveBtn = button("Save", "editor-btn editor-btn-primary");
     cancel.addEventListener("click", () => overlay.remove());
-    saveBtn.addEventListener("click", () => {
-        overlay.remove();
-        onSave();
+    saveBtn.addEventListener("click", async () => {
+        saveBtn.disabled = true;
+        try {
+            if (await onSave()) overlay.remove();
+        } finally {
+            saveBtn.disabled = false;
+        }
     });
     actions.append(cancel, saveBtn);
     modal.append(actions);
@@ -1538,10 +1550,15 @@ function promptModal(title, placeholder, onSubmit) {
     const actions = div("editor-modal-actions");
     const cancel = button("Cancel", "editor-btn");
     const okBtn = button("Save", "editor-btn editor-btn-primary");
-    const submit = () => {
+    const submit = async () => {
         const val = input.value.trim();
         if (!val) return;
-        if (onSubmit(val) !== false) overlay.remove();
+        okBtn.disabled = true;
+        try {
+            if ((await onSubmit(val)) !== false) overlay.remove();
+        } finally {
+            okBtn.disabled = false;
+        }
     };
     cancel.addEventListener("click", () => overlay.remove());
     okBtn.addEventListener("click", submit);
