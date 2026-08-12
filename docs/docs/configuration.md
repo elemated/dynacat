@@ -1616,7 +1616,7 @@ Whether to hide the containers by default. If set to `true` you'll have to manua
 When set to `true`, automatically converts container names such as `container_name_1` into `Container Name 1`.
 
 ##### `sock-path`
-The path to the Docker socket. This can also be a [remote socket](https://docs.docker.com/engine/daemon/remote-access/) or proxied socket using something like [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy).
+The path to the Docker socket. This can also be a `tcp://host:port` or `http://host:port` address to connect to a [remote Docker host](https://docs.docker.com/engine/daemon/remote-access/), or a proxied socket using something like [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy).
 
 ###### `category`
 Filter to only the containers which have this category specified via the `dynacat.category` label. Useful if you want to have multiple containers widgets, each showing a different set of containers.
@@ -1729,7 +1729,7 @@ Controls what to display in the widget. Possible values are:
 - `both` - Display both containers and images (default)
 
 ##### `sock-path`
-The path to the Docker socket. This can also be a [remote socket](https://docs.docker.com/engine/daemon/remote-access/) or proxied socket using something like [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy).
+The path to the Docker socket. This can also be a `tcp://host:port` or `http://host:port` address to connect to a [remote Docker host](https://docs.docker.com/engine/daemon/remote-access/), or a proxied socket using something like [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy).
 
 ##### `format-container-names`
 When set to `true`, automatically converts container names such as `container_name_1` into `Container Name 1`.

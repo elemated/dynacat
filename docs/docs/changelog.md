@@ -1,4 +1,5 @@
 # Changes for 3.0.0
+- Added support for `tcp://`/`http://` remote Docker hosts to `sock-path` in the `docker-controller` widget, matching `docker-containers`
 - Documented `id`/`parent` grouping for the `containers` property in `docker-containers` widget -> https://github.com/Panonim/dynacat/issues/134
 - Fixed an issue where subrequests were not detected properly in `dynawidgets`
 - Fixed `dynawidgets` protocol handling 
