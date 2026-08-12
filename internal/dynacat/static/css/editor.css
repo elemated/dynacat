@@ -458,6 +458,12 @@ body.editing .editor-styling-trigger {
     font-weight: bold;
 }
 
+.editor-field-hint {
+    font-size: 1.1rem;
+    color: var(--color-text-subdue);
+    margin: 0;
+}
+
 .editor-modal .editor-input {
     width: 100%;
     padding: 8px 10px;

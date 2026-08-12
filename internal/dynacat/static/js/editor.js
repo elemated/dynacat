@@ -32,6 +32,16 @@ async function enterEditor() {
         return;
     }
 
+    // Right after a server restart the page's cache is cold and widgets (some of which,
+    // like speedtest, can take well over a minute) are still being fetched. Wait this out
+    // before marking the editor active, so a slow first load doesn't leave a half-entered
+    // editor (docked palette, active toggle) that a retry click can't recover from.
+    const ready = await waitForPageReady();
+    if (!ready) {
+        toast("Page content is still loading, try again in a moment", "negative");
+        return;
+    }
+
     state.active = true;
     sessionStorage.setItem("dynacat-editing", "1");
     document.body.classList.add("editing");
@@ -40,17 +50,11 @@ async function enterEditor() {
     buildPalette();
     buildAddPageButton();
     setupStylingTrigger();
-
-    const ready = await waitForPageReady();
-    if (!ready) {
-        toast("Page content is still loading, try again in a moment", "negative");
-        return;
-    }
     renderCanvas();
     guardCanvas();
 }
 
-function waitForPageReady(timeout = 30000) {
+function waitForPageReady(timeout = 120000) {
     const page = document.getElementById("page");
     if (page && page.classList.contains("content-ready")) return Promise.resolve(page);
 
@@ -623,7 +627,7 @@ function renderField(field, value, structured) {
         read = () => input.value.trim() || undefined;
     }
 
-    const wrapper = labeled(field.label, input, field.required);
+    const wrapper = labeled(field.label, input, field.required, field.hint);
     if (field.kind === "icon") wrapper.append(iconPreview(input));
 
     return { field, wrapper, read };
@@ -665,6 +669,8 @@ function renderListField(field, structured, rawValue) {
     if (field.required) label.append(requiredStar());
     const toggle = button("", "editor-list-toggle");
     labelRow.append(label, toggle);
+    wrapper.append(labelRow);
+    if (field.hint) wrapper.append(fieldHint(field.hint));
 
     const listEl = div("editor-list");
     const addBtn = button(`Add ${singularize(field.label)}`, "editor-list-add");
@@ -875,7 +881,7 @@ function renderListField(field, structured, rawValue) {
         render();
     });
 
-    wrapper.append(labelRow, listEl, addBtn, textarea);
+    wrapper.append(listEl, addBtn, textarea);
     render();
 
     return {
@@ -944,7 +950,7 @@ function renderSearchEngineField(field, value) {
         customInput.style.display = select.value === "custom" ? "" : "none";
     });
 
-    const wrapper = labeled(field.label, select, field.required);
+    const wrapper = labeled(field.label, select, field.required, field.hint);
     wrapper.append(customInput);
     return { field, wrapper, read: () => (select.value === "custom" ? customInput.value.trim() || undefined : select.value || undefined) };
 }
@@ -969,7 +975,7 @@ function renderAutocompleteProviderField(field, value, autocompleteValue) {
         customInput.style.display = select.value === "custom" ? "" : "none";
     });
 
-    const wrapper = labeled(field.label, select, field.required);
+    const wrapper = labeled(field.label, select, field.required, field.hint);
     wrapper.append(customInput);
 
     return {
@@ -1639,14 +1645,23 @@ function inputEl(type) {
     return el;
 }
 
-function labeled(label, control, required) {
+function labeled(label, control, required, hint) {
     const wrapper = div("editor-field");
     const l = document.createElement("label");
     l.className = "editor-field-label";
     l.append(label);
     if (required) l.append(requiredStar());
-    wrapper.append(l, control);
+    wrapper.append(l);
+    if (hint) wrapper.append(fieldHint(hint));
+    wrapper.append(control);
     return wrapper;
+}
+
+function fieldHint(text) {
+    const hint = document.createElement("p");
+    hint.className = "editor-field-hint";
+    hint.append(text);
+    return hint;
 }
 
 function requiredStar() {

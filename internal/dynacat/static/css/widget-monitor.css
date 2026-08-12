@@ -45,6 +45,10 @@
 
 .monitor-site-response-time-compact {
     white-space: nowrap;
+    flex: 0 0 3.6rem;
+    width: 3.6rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 .monitor-history {

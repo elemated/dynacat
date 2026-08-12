@@ -16,6 +16,10 @@
 - Added `show-history` option to `monitor` widget showing a bar of the last hour of status checks
 - Added a comparison to the previous run in `speedtest` widget
 - Fixed a few security issues
+- Fixed trash icon disappearing while dragging a `todo` item on mobile
+- Fixed `todo` checkbox sitting too close to widget edge on mobile
+- Added hints to non-obvious fields (e.g. `server` in `speedtest`, service URL prefixes in `calendar`/`playing`/`latest-media`) in the visual editor
+- Fixed being unable to enter the visual editor after a server restart, when the page's cache was still building on first load
 
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one

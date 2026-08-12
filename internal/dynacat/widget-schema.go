@@ -10,6 +10,7 @@ type widgetFieldSchema struct {
 	Name     string              `json:"name"`
 	Label    string              `json:"label"`
 	Kind     string              `json:"kind"` // text|number|checkbox|select|duration|icon|yaml|list
+	Hint     string              `json:"hint,omitempty"`
 	Required bool                `json:"required,omitempty"`
 	Advanced bool                `json:"advanced,omitempty"`
 	Options  []string            `json:"options,omitempty"`
@@ -77,6 +78,9 @@ type fieldAnnotation struct {
 	Advanced bool
 	Kind     string
 	Options  []string
+	// Hint is a short note shown under the field's label in the editor, keyed by field
+	// name ("<list-field>.<entry-field>" for entries inside a list).
+	Hint string
 }
 
 var alwaysAdvancedFields = map[string]bool{
@@ -126,13 +130,17 @@ const maxListDepth = 2
 var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	"calendar": {
 		"first-day-of-week": {Options: []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}},
+		"hosts.url":         {Hint: "Prefix with the service, e.g. sonarr:https://... or radarr:https://..."},
+		"hosts.token":       {Hint: "API key from the Sonarr/Radarr instance's Settings → General."},
 	},
 	"clock": {
-		"hour-format": {Options: []string{"24h", "12h"}},
+		"hour-format":        {Options: []string{"24h", "12h"}},
+		"timezones.timezone": {Hint: "IANA identifier, e.g. Europe/London."},
 	},
 	"weather": {
 		"hour-format": {Options: []string{"12h", "24h"}},
 		"units":       {Options: []string{"metric", "imperial"}},
+		"location":    {Hint: `City and country, e.g. "Berlin, Germany" — the first match from Open-Meteo is used.`},
 	},
 	"hacker-news": {
 		"sort-by":               {Options: []string{"top", "new", "best"}},
@@ -140,12 +148,19 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"comments-url-template": {Advanced: true},
 	},
 	"releases": {
-		"token":        {Advanced: true},
-		"gitlab-token": {Advanced: true},
+		"token":                   {Advanced: true, Hint: "Personal access token, only needed to avoid GitHub's 60 requests/hour limit."},
+		"gitlab-token":            {Advanced: true, Hint: "Same as token above but for GitLab, only needed to avoid rate limiting."},
+		"repositories.repository": {Hint: "owner/repo for GitHub, or prefix with gitlab:, codeberg: or dockerhub: for other sources."},
+	},
+	"repository": {
+		"token":      {Advanced: true, Hint: "Personal access token, only needed to avoid GitHub's 60 requests/hour limit."},
+		"repository": {Hint: "owner/repo, e.g. Panonim/dynacat."},
 	},
 	"videos": {
 		"style":              {Options: []string{"grid-cards", "vertical-list"}},
 		"video-url-template": {Advanced: true},
+		"channels":           {Hint: "Channel IDs, not usernames — found in the channel page source or a lookup tool."},
+		"playlists":          {Hint: "Playlist IDs, found in the playlist's URL."},
 	},
 	"markets": {
 		"sort-by":              {Options: []string{"absolute-change", "change"}},
@@ -167,40 +182,45 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"style": {Options: []string{"detailed-list", "horizontal-cards", "horizontal-cards-2"}},
 	},
 	"monitor": {
-		"style": {Options: []string{"compact"}},
+		"style":     {Options: []string{"compact"}},
+		"sites.url": {Hint: "Also used for the status check unless check-url is set."},
 	},
 	"twitch-channels": {
 		"sort-by": {Options: []string{"viewers", "live"}},
+	},
+	"twitch-top-games": {
+		"exclude": {Hint: "Category slugs, found in the category page URL on Twitch."},
 	},
 	"lobsters": {
 		"sort-by": {Options: []string{"hot", "new"}},
 	},
 	"change-detection": {
 		"allow-insecure": {Advanced: true},
-		"token":          {Advanced: true},
-	},
-	"repository": {
-		"token": {Advanced: true},
+		"token":          {Advanced: true, Hint: "Found in changedetection.io under Settings → API."},
+		"instance-url":   {Hint: "Base URL of your changedetection.io instance."},
 	},
 	"search": {
 		"search-engine":         {Options: []string{"duckduckgo", "google", "bing", "perplexity", "kagi", "startpage", "qwant", "brave", "custom"}},
 		"autocomplete-provider": {Options: []string{"duckduckgo", "brave", "custom"}},
+		"bangs.shortcut":        {Hint: `The prefix typed before a search, e.g. "yt" for !yt.`},
 	},
 	"extension": {
 		"fallback-content-type":            {Options: []string{"html"}},
 		"headers":                          {Advanced: true},
 		"allow-potentially-dangerous-html": {Advanced: true},
+		"url":                              {Hint: "Query parameters are stripped and replaced with those from parameters below."},
 	},
 	"dns-stats": {
 		"service":        {Options: []string{"adguard", "pihole", "pihole-v6", "technitium", "blocky"}},
 		"hour-format":    {Options: []string{"12h", "24h"}},
-		"token":          {Advanced: true},
-		"username":       {Advanced: true},
-		"password":       {Advanced: true},
+		"token":          {Advanced: true, Hint: "Only used with Pi-hole v5 or earlier, found under Settings → API."},
+		"username":       {Advanced: true, Hint: "Only used with AdGuard Home."},
+		"password":       {Advanced: true, Hint: "Only used with AdGuard Home."},
 		"allow-insecure": {Advanced: true},
+		"url":            {Hint: "Base URL of the AdGuard Home / Pi-hole / Technitium / Blocky instance."},
 	},
 	"custom-api": {
-		"template":       {Kind: "yaml"},
+		"template":       {Kind: "yaml", Hint: "Go html/template syntax with gjson selectors for parsing the response — see the Custom API docs."},
 		"subrequests":    {Advanced: true},
 		"method":         {Advanced: true},
 		"body":           {Advanced: true},
@@ -209,20 +229,21 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"allow-insecure": {Advanced: true},
 	},
 	"dynawidgets": {
-		"repo":           {Advanced: true},
+		"repo":           {Advanced: true, Hint: "Branch/repository to fetch the widget from, defaults to main."},
 		"subrequests":    {Advanced: true},
 		"method":         {Advanced: true},
 		"body":           {Advanced: true},
 		"body-type":      {Advanced: true, Options: []string{"json", "string"}},
 		"headers":        {Advanced: true},
 		"allow-insecure": {Advanced: true},
+		"widget":         {Hint: "Slug of the widget from the dynawidgets repository."},
 	},
 	"docker-containers": {
-		"sock-path": {Advanced: true},
+		"sock-path": {Advanced: true, Hint: "Defaults to /var/run/docker.sock; can also be a tcp://host:port or http://host:port address."},
 	},
 	"docker-controller": {
 		"show":      {Options: []string{"both", "containers", "images"}},
-		"sock-path": {Advanced: true},
+		"sock-path": {Advanced: true, Hint: "Defaults to /var/run/docker.sock; can also be a tcp://host:port or http://host:port address."},
 	},
 	"to-do": {
 		"storage": {Options: []string{"local", "server"}},
@@ -231,6 +252,22 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	"playing": {
 		"play-state":           {Options: []string{"indicator", "text"}},
 		"episode-title-format": {Options: []string{"series", "episode"}},
+		"hosts.url":            {Hint: "Prefix with the service, e.g. plex:https://..., jellyfin:https://..., emby:https://... or navidrome:https://..."},
+		"hosts.token":          {Hint: "Plex token, or the Jellyfin/Emby/Navidrome API key."},
+	},
+	"latest-media": {
+		"hosts.url":   {Hint: "Prefix with the service, e.g. plex:https://..., jellyfin:https://... or emby:https://..."},
+		"hosts.token": {Hint: "Plex token, or the Jellyfin/Emby API key."},
+	},
+	"torrenting": {
+		"hosts.client": {Hint: "qbittorrent (default), deluge or transmission."},
+	},
+	"speedtest": {
+		"server": {Hint: "Leave empty to auto-select a public LibreSpeed server; or set the base URL of your own LibreSpeed instance."},
+	},
+	"server-stats": {
+		"servers":     {Hint: "Leave empty to show stats for the server Dynacat itself is running on."},
+		"servers.url": {Hint: "Address and port of the remote server's Dynacat Agent."},
 	},
 }
 
@@ -264,6 +301,7 @@ func widgetSchema(meta widgetTypeMeta) (widgetTypeSchema, error) {
 		}
 	}
 
+	applyFieldHints(fields, "", ann)
 	markRequiredFields(fields, "", requiredFields[meta.Type])
 
 	return widgetTypeSchema{
@@ -273,6 +311,16 @@ func widgetSchema(meta widgetTypeMeta) (widgetTypeSchema, error) {
 		Hidden: hiddenWidgetTypes[meta.Type],
 		Fields: fields,
 	}, nil
+}
+
+// applyFieldHints sets each field's Hint from ann, keyed the same way as requiredFields:
+// the plain name at the top level, "<list-field>.<entry-field>" for entries inside a list.
+func applyFieldHints(fields []widgetFieldSchema, prefix string, ann map[string]fieldAnnotation) {
+	for i := range fields {
+		path := prefix + fields[i].Name
+		fields[i].Hint = ann[path].Hint
+		applyFieldHints(fields[i].Item, path+".", ann)
+	}
 }
 
 func markRequiredFields(fields []widgetFieldSchema, prefix string, required []string) {
