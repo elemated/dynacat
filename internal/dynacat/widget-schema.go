@@ -9,7 +9,7 @@ import (
 type widgetFieldSchema struct {
 	Name     string              `json:"name"`
 	Label    string              `json:"label"`
-	Kind     string              `json:"kind"` // text|number|checkbox|select|duration|icon|yaml|list
+	Kind     string              `json:"kind"` // text|number|checkbox|select|duration|icon|yaml|text-block|list
 	Hint     string              `json:"hint,omitempty"`
 	Required bool                `json:"required,omitempty"`
 	Advanced bool                `json:"advanced,omitempty"`
@@ -220,7 +220,7 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"url":            {Hint: "Base URL of the AdGuard Home / Pi-hole / Technitium / Blocky instance."},
 	},
 	"custom-api": {
-		"template":       {Kind: "yaml", Hint: "Go html/template syntax with gjson selectors for parsing the response — see the Custom API docs."},
+		"template":       {Kind: "text-block", Hint: "Go html/template syntax with gjson selectors for parsing the response — see the Custom API docs."},
 		"subrequests":    {Advanced: true},
 		"method":         {Advanced: true},
 		"body":           {Advanced: true},

@@ -583,6 +583,44 @@ select.editor-input {
     font-family: monospace;
 }
 
+.editor-textarea-tall {
+    min-height: 180px;
+}
+
+.editor-paste-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-separator);
+}
+
+.editor-paste-hint {
+    color: var(--color-text-subdue);
+    font-size: 1.2rem;
+}
+
+.editor-paste-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 6px 12px;
+}
+
+.editor-paste-btn .editor-icon-inline svg {
+    width: 1.4rem;
+    height: 1.4rem;
+}
+
+.editor-paste-area {
+    min-height: 260px;
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+}
+
 .editor-icon-preview {
     width: 26px;
     height: 26px;
