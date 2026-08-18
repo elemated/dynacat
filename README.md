@@ -194,13 +194,4 @@ You can list multiple origins. Each entry must be a full origin including the sc
 
 <div style='text-align: center;'>
 
-**If you like this project, please consider [sponsoring](https://www.paypal.com/paypalme/imartur).**
-
-<a href="https://www.star-history.com/?repos=panonim%2Fdynacat&type=date&legend=bottom-right">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=panonim/dynacat&type=date&theme=dark&legend=bottom-right" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=panonim/dynacat&type=date&legend=bottom-right" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=panonim/dynacat&type=date&legend=bottom-right" />
- </picture>
-</a>
-</div>
+**If you like this project, please consider [sponsoring](https://ko-fi.com/panonim).**
