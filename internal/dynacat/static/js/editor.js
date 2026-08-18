@@ -32,16 +32,6 @@ async function enterEditor() {
         return;
     }
 
-    // Right after a server restart the page's cache is cold and widgets (some of which,
-    // like speedtest, can take well over a minute) are still being fetched. Wait this out
-    // before marking the editor active, so a slow first load doesn't leave a half-entered
-    // editor (docked palette, active toggle) that a retry click can't recover from.
-    const ready = await waitForPageReady();
-    if (!ready) {
-        toast("Page content is still loading, try again in a moment", "negative");
-        return;
-    }
-
     state.active = true;
     sessionStorage.setItem("dynacat-editing", "1");
     document.body.classList.add("editing");
@@ -50,27 +40,20 @@ async function enterEditor() {
     buildPalette();
     buildAddPageButton();
     setupStylingTrigger();
+    prepareCanvas();
     renderCanvas();
     guardCanvas();
 }
 
-function waitForPageReady(timeout = 120000) {
+function prepareCanvas() {
     const page = document.getElementById("page");
-    if (page && page.classList.contains("content-ready")) return Promise.resolve(page);
+    if (page) {
+        page.classList.add("content-ready");
+        page.setAttribute("aria-busy", "false");
+    }
 
-    return new Promise((resolve) => {
-        const observer = new MutationObserver(() => {
-            if (page && page.classList.contains("content-ready")) {
-                observer.disconnect();
-                resolve(page);
-            }
-        });
-        observer.observe(page || document.body, { attributes: true, attributeFilter: ["class"], childList: !page, subtree: !page });
-        setTimeout(() => {
-            observer.disconnect();
-            resolve(page && page.classList.contains("content-ready") ? page : null);
-        }, timeout);
-    });
+    const content = document.getElementById("page-content");
+    if (content && !content.querySelector(".page-columns")) content.append(div("page-columns"));
 }
 
 function guardCanvas() {
@@ -549,7 +532,6 @@ function buildWidgetModal(type, values, structured, onSave) {
     const basic = div("editor-fields");
     const advanced = div("editor-fields");
     const controls = [];
-    // Fields a pasted widget left out. 
     const cleared = new Set();
 
     for (const field of schema.fields) {
@@ -580,7 +562,7 @@ function buildWidgetModal(type, values, structured, onSave) {
         for (const c of controls) {
             const value = c.read();
             if (c.extra) Object.assign(fields, c.extra());
-            const raw = c.field.kind === "yaml" || (c.isYAML && c.isYAML());.
+            const raw = c.field.kind === "yaml" || (c.isYAML && c.isYAML());
             if (cleared.has(c.field.name)) {
                 (raw ? rawFields : fields)[c.field.name] = "";
                 continue;
@@ -595,7 +577,10 @@ function buildWidgetModal(type, values, structured, onSave) {
         return onSave(fields, rawFields);
     });
 }
+
+//
 // Paste raw YAML into the form
+//
 
 function pasteSection(schema, apply) {
     const row = div("editor-paste-row");
