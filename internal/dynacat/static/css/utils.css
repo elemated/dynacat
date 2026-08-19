@@ -556,6 +556,7 @@ details[open] .summary::after {
 .cursor-help { cursor: help; }
 .rounded { border-radius: var(--border-radius); }
 .break-all { word-break: break-all; }
+.wrap-anywhere { overflow-wrap: anywhere; }
 .text-left { text-align: left; }
 .text-right { text-align: right; }
 .text-center { text-align: center; }
@@ -566,6 +567,8 @@ details[open] .summary::after {
 .shrink { flex-shrink: 1; }
 .shrink-0 { flex-shrink: 0; }
 .min-width-0 { min-width: 0; }
+.width-ui-icon { width: 2.3rem; }
+.nowrap { white-space: nowrap; }
 .max-width-100 { max-width: 100%; }
 .block { display: block; }
 .inline-block { display: inline-block; }

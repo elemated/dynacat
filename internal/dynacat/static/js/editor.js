@@ -533,10 +533,16 @@ function buildWidgetModal(type, values, structured, onSave) {
     const advanced = div("editor-fields");
     const controls = [];
     const cleared = new Set();
+    const hiddenValues = {};
 
     for (const field of schema.fields) {
         if (field.name === "widgets") continue;
         if (field.name === "autocomplete") continue;
+        // Hidden fields have no control, so carry their value through untouched.
+        if (field.hidden) {
+            if (values[field.name] !== undefined) hiddenValues[field.name] = values[field.name];
+            continue;
+        }
 
         const control = field.name === "autocomplete-provider"
             ? renderAutocompleteProviderField(field, values["autocomplete-provider"], values["autocomplete"])
@@ -557,7 +563,7 @@ function buildWidgetModal(type, values, structured, onSave) {
     if (advanced.children.length) sections.push(collapsible("Advanced", advanced));
 
     openModal(schema.label, sections, () => {
-        const fields = {};
+        const fields = { ...hiddenValues };
         const rawFields = {};
         for (const c of controls) {
             const value = c.read();
@@ -575,7 +581,53 @@ function buildWidgetModal(type, values, structured, onSave) {
             else fields[c.field.name] = value;
         }
         return onSave(fields, rawFields);
+    }, type === "custom-api" ? customAPIEditorButton(controls, hiddenValues, cleared) : null);
+}
+
+// Resolves once the modal has actually saved, so the editor can stay on top until then.
+function submitWidgetModal(btn) {
+    const overlay = btn.closest(".editor-modal-overlay");
+    overlay?.querySelector(".editor-modal-actions .editor-btn-primary")?.click();
+
+    return new Promise((resolve) => {
+        const done = () => {
+            clearInterval(timer);
+            resolve();
+        };
+        const timer = setInterval(() => {
+            if (!overlay?.isConnected || document.querySelector(".editor-toast.color-negative")) done();
+        }, 100);
+        setTimeout(done, 6000);
     });
+}
+
+function customAPIEditorButton(controls, hiddenValues, cleared) {
+    const btn = button("Open Editor", "editor-btn editor-open-builder");
+    const controlByName = Object.fromEntries(controls.map((c) => [c.field.name, c]));
+
+    btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+            const editor = await import("./customapi-editor.js");
+            editor.openCustomAPIEditor({
+                read: (name) => controlByName[name]?.read(),
+                write: (name, value) => controlByName[name]?.write(value),
+                clear: (name) => cleared.add(name),
+                submit: () => submitWidgetModal(btn),
+                hiddenValues,
+                toValue: convertToValue,
+                toast,
+                confirmAction,
+                resolveIcon,
+            });
+        } catch (err) {
+            toast(err.message || "Could not open the editor", "negative");
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    return btn;
 }
 
 //
@@ -1639,7 +1691,7 @@ function hslToHex(h, s, l) {
 // Generic modal
 //
 
-function openModal(title, sections, onSave) {
+function openModal(title, sections, onSave, footerLeft) {
     const overlay = div("editor-ui editor-modal-overlay");
     const modal = div("editor-modal");
     modal.append(div("editor-modal-title", title));
@@ -1660,6 +1712,7 @@ function openModal(title, sections, onSave) {
             saveBtn.disabled = false;
         }
     });
+    if (footerLeft) actions.append(footerLeft);
     actions.append(cancel, saveBtn);
     modal.append(actions);
 
@@ -1672,7 +1725,7 @@ function openModal(title, sections, onSave) {
     document.body.append(overlay);
 }
 
-function confirmAction(message, onConfirm) {
+function confirmAction(message, onConfirm, options = {}) {
     if (window.matchMedia("(max-width: 768px)").matches) {
         if (confirm(message)) onConfirm();
         return;
@@ -1681,11 +1734,12 @@ function confirmAction(message, onConfirm) {
     const overlay = div("editor-ui editor-modal-overlay");
     const modal = div("editor-modal editor-confirm");
     modal.append(div("editor-confirm-message", message));
+    if (options.note) modal.append(div("editor-confirm-note", options.note));
 
     const actions = div("editor-modal-actions");
     const cancel = button("Cancel", "editor-btn");
-    const confirmBtn = button("Remove", "editor-btn editor-btn-danger");
-    confirmBtn.prepend(iconSpan(iconTrash));
+    const confirmBtn = button(options.confirmLabel || "Remove", "editor-btn editor-btn-danger");
+    if (!options.confirmLabel) confirmBtn.prepend(iconSpan(iconTrash));
     cancel.addEventListener("click", () => overlay.remove());
     confirmBtn.addEventListener("click", () => {
         overlay.remove();

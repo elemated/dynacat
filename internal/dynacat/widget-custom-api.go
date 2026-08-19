@@ -45,9 +45,11 @@ type customAPIWidget struct {
 	Options           customAPIOptions             `yaml:"options"`
 	Template          string                       `yaml:"template"`
 	Frameless         bool                         `yaml:"frameless"`
-	compiledTemplate  *template.Template           `yaml:"-"`
-	CompiledHTML      template.HTML                `yaml:"-"`
-	APIResponse       json.RawMessage              `yaml:"-"`
+	// Serialized layout of the visual editor, never read while rendering.
+	Builder          string             `yaml:"builder"`
+	compiledTemplate *template.Template `yaml:"-"`
+	CompiledHTML     template.HTML      `yaml:"-"`
+	APIResponse      json.RawMessage    `yaml:"-"`
 }
 
 func (widget *customAPIWidget) initialize() error {
@@ -371,6 +373,16 @@ func fetchAndRenderCustomAPIRequest(
 		rawResponse = json.RawMessage(primaryData.JSON.Raw)
 	}
 
+	body, hidden, err := renderCustomAPIData(primaryData, subData, options, tmpl)
+	return body, hidden, rawResponse, err
+}
+
+func renderCustomAPIData(
+	primaryData *customAPIResponseData,
+	subData map[string]*customAPIResponseData,
+	options customAPIOptions,
+	tmpl *template.Template,
+) (template.HTML, bool, error) {
 	data := customAPITemplateData{
 		customAPIResponseData: primaryData,
 		subrequests:           subData,
@@ -378,9 +390,8 @@ func fetchAndRenderCustomAPIRequest(
 	}
 
 	var templateBuffer bytes.Buffer
-	err = tmpl.Execute(&templateBuffer, &data)
-	if err != nil {
-		return emptyBody, false, rawResponse, err
+	if err := tmpl.Execute(&templateBuffer, &data); err != nil {
+		return "", false, err
 	}
 
 	output := templateBuffer.String()
@@ -389,7 +400,7 @@ func fetchAndRenderCustomAPIRequest(
 		output = strings.ReplaceAll(output, customAPIHideWidgetSentinel, "")
 	}
 
-	return template.HTML(output), hidden, rawResponse, nil
+	return template.HTML(output), hidden, nil
 }
 
 type decoratedGJSONResult struct {
@@ -537,6 +548,28 @@ func customAPITemplateFuncs(providers *widgetProviders) template.FuncMap {
 		},
 		"toInt": func(a float64) int {
 			return int(a)
+		},
+		"formatBytes": func(v any) string {
+			var b float64
+			switch t := v.(type) {
+			case int:
+				b = float64(t)
+			case int64:
+				b = float64(t)
+			case float64:
+				b = t
+			default:
+				return "?"
+			}
+
+			units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+			i := 0
+			for b >= 1024 && i < len(units)-1 {
+				b /= 1024
+				i++
+			}
+
+			return strconv.FormatFloat(b, 'f', ternary(i == 0, 0, 1), 64) + " " + units[i]
 		},
 		"add": func(a, b any) any {
 			return doMathOpWithAny(a, b, "add")

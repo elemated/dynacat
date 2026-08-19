@@ -999,6 +999,7 @@ func (a *application) server() (func() error, func() error) {
 	mux.HandleFunc("GET /api/editor/config", a.handleEditorConfigLoad)
 	mux.HandleFunc("POST /api/editor/config", a.handleEditorConfigSave)
 	mux.HandleFunc("POST /api/editor/convert", a.handleEditorConvert)
+	mux.HandleFunc("POST /api/editor/custom-api/preview", a.handleEditorCustomAPIPreview)
 
 	mux.Handle(
 		fmt.Sprintf("GET /static/%s/{path...}", getStaticFSHash()),

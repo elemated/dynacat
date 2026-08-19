@@ -13,6 +13,7 @@ type widgetFieldSchema struct {
 	Hint     string              `json:"hint,omitempty"`
 	Required bool                `json:"required,omitempty"`
 	Advanced bool                `json:"advanced,omitempty"`
+	Hidden   bool                `json:"hidden,omitempty"`
 	Options  []string            `json:"options,omitempty"`
 	Item     []widgetFieldSchema `json:"item,omitempty"`
 	ItemKind string              `json:"itemKind,omitempty"`
@@ -76,6 +77,7 @@ var widgetTypeCatalog = []widgetTypeMeta{
 
 type fieldAnnotation struct {
 	Advanced bool
+	Hidden   bool
 	Kind     string
 	Options  []string
 	// Hint is a short note shown under the field's label in the editor, keyed by field
@@ -221,6 +223,7 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	},
 	"custom-api": {
 		"template":       {Kind: "text-block", Hint: "Go html/template syntax with gjson selectors for parsing the response — see the Custom API docs."},
+		"builder":        {Hidden: true},
 		"subrequests":    {Advanced: true},
 		"method":         {Advanced: true},
 		"body":           {Advanced: true},
@@ -292,6 +295,7 @@ func widgetSchema(meta widgetTypeMeta) (widgetTypeSchema, error) {
 		if a.Advanced {
 			f.Advanced = true
 		}
+		f.Hidden = a.Hidden
 		if a.Kind != "" {
 			f.Kind = a.Kind
 		}

@@ -1,7 +1,11 @@
 package dynacat
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"html/template"
 	"io"
 	"log/slog"
 	"net/http"
@@ -154,4 +158,116 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+type editorPreviewRequest struct {
+	URL           string                       `json:"url"`
+	AllowInsecure bool                         `json:"allow-insecure"`
+	Headers       map[string]string            `json:"headers"`
+	Subrequests   map[string]*CustomAPIRequest `json:"subrequests"`
+	Template      string                       `json:"template"`
+}
+
+type editorPreviewResponse struct {
+	JSON            json.RawMessage            `json:"json,omitempty"`
+	SubrequestsJSON map[string]json.RawMessage `json:"subrequestsJson,omitempty"`
+	HTML            string                     `json:"html,omitempty"`
+	Error           string                     `json:"error,omitempty"`
+}
+
+// Fetches a custom-api request and renders its template so the editor can show errors before the widget is saved.
+func (a *application) handleEditorCustomAPIPreview(w http.ResponseWriter, r *http.Request) {
+	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
+		return
+	}
+	if !a.userCanEditAnything(a.getAuthenticatedUser(w, r)) {
+		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, editorMaxBodyBytes)
+	var req editorPreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	// Fetch and template problems are the point of the preview, so they travel in the body instead of a status code.
+	fail := func(err error) {
+		writeJSON(w, http.StatusOK, editorPreviewResponse{Error: err.Error()})
+	}
+
+	primary := &CustomAPIRequest{URL: req.URL, AllowInsecure: req.AllowInsecure, Headers: req.Headers}
+	primaryData, err := fetchEditorPreviewRequest(primary)
+	if err != nil {
+		fail(err)
+		return
+	}
+
+	response := editorPreviewResponse{
+		JSON:            json.RawMessage(primaryData.JSON.Raw),
+		SubrequestsJSON: make(map[string]json.RawMessage, len(req.Subrequests)),
+	}
+	subData := make(map[string]*customAPIResponseData, len(req.Subrequests))
+
+	for key, sub := range req.Subrequests {
+		data, err := fetchEditorPreviewRequest(sub)
+		if err != nil {
+			fail(fmt.Errorf("subrequest %q: %w", key, err))
+			return
+		}
+		subData[key] = data
+		response.SubrequestsJSON[key] = json.RawMessage(data.JSON.Raw)
+	}
+
+	if req.Template != "" {
+		providers := &widgetProviders{
+			assetResolver: a.StaticAssetPath,
+			imageCache:    a.imageCache,
+			baseURL:       a.Config.Server.BaseURL,
+			app:           a,
+		}
+
+		tmpl, err := template.New("").Funcs(customAPITemplateFuncs(providers)).Parse(req.Template)
+		if err != nil {
+			fail(err)
+			return
+		}
+
+		html, _, err := renderCustomAPIData(primaryData, subData, customAPIOptions{}, tmpl)
+		if err != nil {
+			fail(err)
+			return
+		}
+		response.HTML = string(html)
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+// Expands ${VAR} references the same way a saved config would before fetching.
+func fetchEditorPreviewRequest(req *CustomAPIRequest) (*customAPIResponseData, error) {
+	if req == nil {
+		return nil, errors.New("missing request")
+	}
+
+	expanded, err := parseConfigVariables([]byte(req.URL))
+	if err != nil {
+		return nil, err
+	}
+	req.URL = string(expanded)
+
+	for key, value := range req.Headers {
+		expandedValue, err := parseConfigVariables([]byte(value))
+		if err != nil {
+			return nil, err
+		}
+		req.Headers[key] = string(expandedValue)
+	}
+
+	if err := req.initialize(); err != nil {
+		return nil, err
+	}
+
+	return fetchCustomAPIResponse(context.Background(), req)
 }

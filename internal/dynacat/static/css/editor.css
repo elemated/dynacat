@@ -464,18 +464,20 @@ body.editing .editor-styling-trigger {
     margin: 0;
 }
 
-.editor-modal .editor-input {
+.editor-modal .editor-input,
+.capi-editor .editor-input {
     width: 100%;
     padding: 8px 10px;
     border-radius: var(--border-radius);
     border: 1px solid var(--color-separator);
-    background: var(--color-widget-background-highlight);
+    background-color: var(--color-widget-background-highlight);
     color: var(--color-text-base);
     font: inherit;
     color-scheme: dark;
 }
 
-.editor-modal .editor-input:focus {
+.editor-modal .editor-input:focus,
+.capi-editor .editor-input:focus {
     outline: none;
     border-color: var(--color-primary);
 }
@@ -493,7 +495,8 @@ body.editing .editor-styling-trigger {
     color: var(--color-text-base);
 }
 
-.editor-modal .editor-check input[type="checkbox"] {
+.editor-modal .editor-check input[type="checkbox"],
+.capi-editor input[type="checkbox"] {
     appearance: none;
     -webkit-appearance: none;
     position: relative;
@@ -508,16 +511,19 @@ body.editing .editor-styling-trigger {
     transition: background 0.15s, border-color 0.15s;
 }
 
-.editor-modal .editor-check input[type="checkbox"]:hover {
+.editor-modal .editor-check input[type="checkbox"]:hover,
+.capi-editor input[type="checkbox"]:hover {
     border-color: var(--color-primary);
 }
 
-.editor-modal .editor-check input[type="checkbox"]:checked {
+.editor-modal .editor-check input[type="checkbox"]:checked,
+.capi-editor input[type="checkbox"]:checked {
     background: var(--color-primary);
     border-color: var(--color-primary);
 }
 
-.editor-modal .editor-check input[type="checkbox"]:checked::after {
+.editor-modal .editor-check input[type="checkbox"]:checked::after,
+.capi-editor input[type="checkbox"]:checked::after {
     content: "";
     position: absolute;
     left: 6px;
@@ -529,8 +535,15 @@ body.editing .editor-styling-trigger {
     transform: rotate(45deg);
 }
 
-select.editor-input {
+.editor-modal select.editor-input,
+.capi-editor select.editor-input {
     appearance: none;
+    -webkit-appearance: none;
+    padding-right: 30px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23888888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 4.5 6 7.75 9.25 4.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 12px 12px;
     cursor: pointer;
 }
 
@@ -751,7 +764,7 @@ select.editor-input {
 /* Inputs sit on the card background, so they need a darker fill to read as inputs. */
 .editor-modal .editor-list-body .editor-input,
 .editor-modal .editor-list-row .editor-input {
-    background: var(--color-background);
+    background-color: var(--color-background);
 }
 
 .editor-list-row {
@@ -841,12 +854,12 @@ select.editor-input {
     align-items: center;
     gap: 6px;
     color: var(--color-negative);
-    border-color: var(--color-negative);
+    border-color: color-mix(in srgb, var(--color-negative) 45%, transparent);
 }
 
 .editor-btn-danger:hover {
-    background: var(--color-negative);
-    color: var(--color-background);
+    background: color-mix(in srgb, var(--color-negative) 14%, transparent);
+    color: var(--color-negative);
     border-color: var(--color-negative);
 }
 
@@ -873,6 +886,12 @@ select.editor-input {
 .editor-confirm-message {
     font-size: 1.35rem;
     color: var(--color-text-base);
+}
+
+.editor-confirm-note {
+    margin-top: -8px;
+    font-size: 1.2rem;
+    color: var(--color-text-subdue);
 }
 
 .editor-layout-grid {

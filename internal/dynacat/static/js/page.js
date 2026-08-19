@@ -2215,6 +2215,7 @@ function _initSSE() {
 window.addEventListener('beforeunload', _closeSSE);
 
 window.dynacatSetupPopovers = setupPopovers;
+window.dynacatSetupCollapsibleLists = setupCollapsibleLists;
 
 function fetchLazyWidgets() {
     document.querySelectorAll('.widget[data-lazy-load]').forEach(widget => {
