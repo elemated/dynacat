@@ -2,16 +2,20 @@ package dynacat
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -184,6 +188,76 @@ func fileServerWithCache(fs http.FileSystem, cacheDuration time.Duration) http.H
 		// TODO: fix always setting cache control even if the file doesn't exist
 		w.Header().Set("Cache-Control", cacheControlValue)
 		server.ServeHTTP(w, r)
+	})
+}
+
+var gzipWriterPool = sync.Pool{
+	New: func() any { return gzip.NewWriter(io.Discard) },
+}
+
+var compressibleAssetExtensions = map[string]bool{
+	".css": true, ".js": true, ".json": true, ".svg": true, ".txt": true, ".xml": true, ".map": true,
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	writer        *gzip.Writer
+	headerWritten bool
+}
+
+func (w *gzipResponseWriter) WriteHeader(status int) {
+	if w.headerWritten {
+		return
+	}
+	w.headerWritten = true
+
+	// Anything other than a 200 (a 304 above all) has no body worth compressing.
+	if status == http.StatusOK {
+		w.Header().Del("Content-Length")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.writer = gzipWriterPool.Get().(*gzip.Writer)
+		w.writer.Reset(w.ResponseWriter)
+	}
+
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *gzipResponseWriter) Write(p []byte) (int, error) {
+	if !w.headerWritten {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.writer == nil {
+		return w.ResponseWriter.Write(p)
+	}
+
+	return w.writer.Write(p)
+}
+
+func (w *gzipResponseWriter) close() {
+	if w.writer == nil {
+		return
+	}
+
+	w.writer.Close()
+	gzipWriterPool.Put(w.writer)
+}
+
+// Compresses text assets on the fly; range requests and already-compressed types pass through.
+func gzipTextAssets(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+
+		if r.Header.Get("Range") != "" ||
+			!strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") ||
+			!compressibleAssetExtensions[strings.ToLower(path.Ext(r.URL.Path))] {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		gw := &gzipResponseWriter{ResponseWriter: w}
+		defer gw.close()
+
+		next.ServeHTTP(gw, r)
 	})
 }
 

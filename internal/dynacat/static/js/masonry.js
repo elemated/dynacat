@@ -46,7 +46,13 @@ export function setupMasonries() {
             container.append(columnsFragment);
         };
 
+        // A morph reuses the container while wiping data-initialized, so it drops the previous observer.
+        if (container._masonryObserver) {
+            container._masonryObserver.disconnect();
+        }
+
         const observer = new ResizeObserver(() => requestAnimationFrame(render));
+        container._masonryObserver = observer;
         observer.observe(container);
     }
 }

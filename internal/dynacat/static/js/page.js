@@ -15,11 +15,27 @@ async function fetchPageContent(pageData) {
     };
 }
 
+let carouselResizeListenerInitialized = false;
+
 function setupCarousels() {
     const carouselElements = document.getElementsByClassName("carousel-container");
 
     if (carouselElements.length == 0) {
         return;
+    }
+
+    if (!carouselResizeListenerInitialized) {
+        carouselResizeListenerInitialized = true;
+
+        const determineAllSideCutoffs = throttledDebounce(() => {
+            const carousels = document.getElementsByClassName("carousel-container");
+
+            for (let i = 0; i < carousels.length; i++) {
+                if (carousels[i]._determineSideCutoffs) carousels[i]._determineSideCutoffs();
+            }
+        }, 20, 100);
+
+        window.addEventListener("resize", determineAllSideCutoffs);
     }
 
     for (let i = 0; i < carouselElements.length; i++) {
@@ -47,10 +63,20 @@ function setupCarousels() {
 
         const determineSideCutoffsRateLimited = throttledDebounce(determineSideCutoffs, 20, 100);
 
-        itemsContainer.addEventListener("scroll", determineSideCutoffsRateLimited);
-        window.addEventListener("resize", determineSideCutoffsRateLimited);
+        // A morph reuses the container while wiping data-initialized, so drop the previous handler.
+        if (itemsContainer._carouselScrollHandler) {
+            itemsContainer.removeEventListener("scroll", itemsContainer._carouselScrollHandler);
+        }
 
-        afterContentReady(determineSideCutoffs);
+        itemsContainer._carouselScrollHandler = determineSideCutoffsRateLimited;
+        itemsContainer.addEventListener("scroll", determineSideCutoffsRateLimited);
+        carousel._determineSideCutoffs = determineSideCutoffs;
+
+        if (pageSetupComplete) {
+            determineSideCutoffs();
+        } else {
+            afterContentReady(determineSideCutoffs);
+        }
     }
 }
 
@@ -690,13 +716,20 @@ function setupGroups() {
 
 function setupImageFallbacks() {
     document.querySelectorAll("img[data-fallback-src]:not([loading=lazy])").forEach(img => {
-        img.addEventListener("error", function handler() {
+        if (img._fallbackHandler) {
+            img.removeEventListener("error", img._fallbackHandler);
+        }
+
+        const handler = function() {
             img.removeEventListener("error", handler);
             const fallback = img.dataset.fallbackSrc;
             if (fallback && img.src !== fallback) {
                 img.src = fallback;
             }
-        });
+        };
+
+        img._fallbackHandler = handler;
+        img.addEventListener("error", handler);
     });
 }
 
@@ -1014,6 +1047,11 @@ function setupCollapsibleGrids() {
             applyCollapsibleItems(cardsPerRow);
         }
 
+        // This runs page wide on every widget update
+        if (gridElement._collapsibleResizeObserver) {
+            gridElement._collapsibleResizeObserver.disconnect();
+        }
+
         const observer = new ResizeObserver(() => {
             if (!isElementVisible(gridElement)) {
                 return;
@@ -1029,7 +1067,13 @@ function setupCollapsibleGrids() {
             resolveCollapsibleItems();
         });
 
-        afterContentReady(() => observer.observe(gridElement));
+        gridElement._collapsibleResizeObserver = observer;
+
+        if (pageSetupComplete) {
+            observer.observe(gridElement);
+        } else {
+            afterContentReady(() => observer.observe(gridElement));
+        }
     }
 }
 

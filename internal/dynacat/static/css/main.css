@@ -64,6 +64,5 @@
 @import "widgets.css";
 @import "popover.css";
 @import "utils.css";
-@import "editor.css";
-@import "customapi-editor.css";
+@import "editor-toggle.css";
 @import "mobile.css";

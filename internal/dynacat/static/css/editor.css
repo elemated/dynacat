@@ -1,24 +1,4 @@
-@media (max-width: 768px) {
-    #editor-toggle {
-        display: none;
-    }
-}
-
-.editor-toggle-icon {
-    width: 1.8rem;
-    height: 1.8rem;
-    stroke: var(--color-text-subdue);
-    transition: stroke 0.2s;
-    transform: translateY(2px);
-}
-
-#editor-toggle:hover .editor-toggle-icon {
-    stroke: var(--color-text-highlight);
-}
-
-.editor-toggle-active .editor-toggle-icon {
-    stroke: var(--color-primary);
-}
+@import "customapi-editor.css";
 
 .editor-palette {
     position: fixed;

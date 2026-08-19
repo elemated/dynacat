@@ -90,9 +90,7 @@ func computeFSHash(files fs.FS) (string, error) {
 var cssImportPattern = regexp.MustCompile(`(?m)^@import "(.*?)";$`)
 var cssSingleLineCommentPattern = regexp.MustCompile(`(?m)^\s*\/\*.*?\*\/$`)
 
-var bundledCSSContents = func() []byte {
-	const mainFilePath = "css/main.css"
-
+func bundleCSS(mainFilePath string) []byte {
 	var recursiveParseImports func(path string, depth int) ([]byte, error)
 	recursiveParseImports = func(path string, depth int) ([]byte, error) {
 		if depth > 20 {
@@ -150,4 +148,9 @@ var bundledCSSContents = func() []byte {
 	contents = bytes.ReplaceAll(contents, []byte("\n"), []byte(""))
 
 	return contents
-}()
+}
+
+var bundledCSSContents = bundleCSS("css/main.css")
+
+// Moved away from the main bundle so visitors who never open the editor won't download the file.
+var bundledEditorCSSContents = bundleCSS("css/editor.css")

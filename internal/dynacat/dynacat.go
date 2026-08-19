@@ -1003,10 +1003,10 @@ func (a *application) server() (func() error, func() error) {
 
 	mux.Handle(
 		fmt.Sprintf("GET /static/%s/{path...}", getStaticFSHash()),
-		http.StripPrefix(
+		gzipTextAssets(http.StripPrefix(
 			"/static/"+getStaticFSHash(),
 			fileServerWithCache(http.FS(staticFS), STATIC_ASSETS_CACHE_DURATION),
-		),
+		)),
 	)
 
 	if a.Config.Server.CacheDir != "" {
@@ -1035,11 +1035,16 @@ func (a *application) server() (func() error, func() error) {
 		int(STATIC_ASSETS_CACHE_DURATION.Seconds()),
 	)
 
-	mux.HandleFunc(fmt.Sprintf("GET /static/%s/css/bundle.css", getStaticFSHash()), func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Cache-Control", assetCacheControlValue)
-		w.Header().Add("Content-Type", "text/css; charset=utf-8")
-		w.Write(bundledCSSContents)
-	})
+	serveCSSBundle := func(contents []byte) http.Handler {
+		return gzipTextAssets(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add("Cache-Control", assetCacheControlValue)
+			w.Header().Add("Content-Type", "text/css; charset=utf-8")
+			w.Write(contents)
+		}))
+	}
+
+	mux.Handle(fmt.Sprintf("GET /static/%s/css/bundle.css", getStaticFSHash()), serveCSSBundle(bundledCSSContents))
+	mux.Handle(fmt.Sprintf("GET /static/%s/css/editor-bundle.css", getStaticFSHash()), serveCSSBundle(bundledEditorCSSContents))
 
 	mux.HandleFunc("GET /manifest.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Cache-Control", assetCacheControlValue)

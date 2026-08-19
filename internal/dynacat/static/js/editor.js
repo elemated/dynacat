@@ -15,9 +15,24 @@ export async function toggleEditor() {
     await enterEditor();
 }
 
+// The editor's styles ship as their own bundle, so they load here instead of on every page view.
+function loadEditorStyles() {
+    const href = new URL("../css/editor-bundle.css", import.meta.url).href;
+    if (document.querySelector(`link[href="${href}"]`)) return Promise.resolve();
+
+    return new Promise((resolve) => {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = href;
+        link.addEventListener("load", resolve, { once: true });
+        link.addEventListener("error", resolve, { once: true });
+        document.head.append(link);
+    });
+}
+
 async function enterEditor() {
     try {
-        const [schemas, config] = await Promise.all([apiGet("/schema"), apiGet("/config")]);
+        const [schemas, config] = await Promise.all([apiGet("/schema"), apiGet("/config"), loadEditorStyles()]);
         state.schemas = schemas;
         state.schemaByType = Object.fromEntries(schemas.map((s) => [s.type, s]));
         state.config = config;
