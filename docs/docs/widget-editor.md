@@ -2,6 +2,8 @@
 
 The widget editor is a fullscreen visual builder for `custom-api` widgets. You point it at an API, drag blocks onto a canvas, bind them to fields from the response and it writes the `template` for you.
 
+![](images/widget-editor-overview.png)
+
 It is an addition to the template textarea, not a replacement for it. Hand written templates keep working exactly as before, and everything on this page ends up as a normal `template` in your config.
 
 ## Opening the editor
@@ -16,15 +18,14 @@ It is an addition to the template textarea, not a replacement for it. Hand writt
 
 ## Layout
 
-The editor takes over the whole screen and is split into five areas:
+The editor takes over the whole screen and is split into four areas:
 
 | Area | Contents |
 | ---- | -------- |
-| Top bar | The request url, a **Preview** toggle and **Refresh data** |
+| Top bar | The request url, **Preview**, **Refresh data**, a status line, **Cancel** and **Apply and save** |
 | Left pane | The subrequests, the block palette, and the list of fields found in the API response with a sample value for each |
 | Middle | A dotted canvas holding a preview of the widget |
 | Right | The inspector for the currently selected block, with one collapsible card per row list column |
-| Footer | A status line, **Cancel**, and **Apply and save** |
 
 **Apply and save** writes the template and saves the widget in one step. **Cancel** leaves the saved widget exactly as it is.
 
@@ -59,6 +60,8 @@ Select a block, then click a field in the left pane. You can also drag a field f
 
 These options are available per stat, and per column of a row list.
 
+![](images/widget-editor-value-options.png)
+
 #### Math
 
 Add, subtract, multiply or divide the value by a constant.
@@ -87,6 +90,8 @@ Pick one of the theme colors: highlight, primary, positive, negative, subdue, pa
 
 Tick **Color by a rule** to pick the color from the value itself. Numeric values compare with greater than, less than, at least, at most or equal to. Everything else, including `true` and `false`, compares with is or is not. Set the value to compare with, then the color to use when it matches and the one to use when it does not. This is how you get a green value when something is up and a red one when it is down.
 
+![](images/widget-editor-color-rule.png)
+
 #### Show only when it matches
 
 Tick **Show only when it matches** to render the stat or column only when its field passes a comparison. The same comparisons are available as for rules, so a field can disappear when it is empty, or a row can only show a value when a flag is `true`.
@@ -98,6 +103,8 @@ A row list repeats a row of columns for every item in an array.
 1. Pick the array to repeat over. Only array fields are offered here.
 2. Once it is bound, the left pane shows a group named `Fields in each row of <path>`, listing the fields of the first item. Those are the fields the columns bind to.
 3. Set **Rows to show** to choose how many rows are visible. The rest stay behind a show more control in the rendered widget rather than being dropped.
+
+![](images/widget-editor-row-list.png)
 
 Each column can have an optional label and an optional icon. As soon as any column has a label, a header line is rendered above the rows. Columns share the row width evenly so the values line up under their labels, with the first column aligned left and the last one right. **Text alignment** overrides that per column. **Long values** decides what happens when a value does not fit: `Crop to one line` keeps every row one line high and ends the value with an ellipsis, `Wrap over two lines` lets it wrap, breaking words where it has to and stopping after two lines so one long value cannot stretch the widget.
 
@@ -114,6 +121,8 @@ Use **Sort rows by** to sort, together with a direction. The comparison is picke
 3. Pick the comparison and the value to compare with, for example `is` and `true`.
 4. Set the icon shown when it matches, and optionally the one shown when it does not. Leaving the second icon blank hides the icon in that case while the column keeps its width, so the rows stay aligned.
 
+![](images/widget-editor-icon-column.png)
+
 A row list is removed by removing its row, it has no delete control of its own.
 
 ## Subrequests
@@ -126,6 +135,8 @@ In the generated template they are reached with `.Subrequest "name"`.
 
 The **Preview** toggle renders the template on the server using the real API data and shows the actual widget, so you can check the result before saving. It stays live: keep editing in the inspector and the preview re-renders on its own. Toggle it off to go back to the editable canvas.
 
+![](images/widget-editor-preview.png)
+
 ## Saving and validation
 
 **Apply and save** runs three steps:
@@ -134,7 +145,7 @@ The **Preview** toggle renders the template on the server using the real API dat
 2. It compiles and renders the template on the server.
 3. Only if both pass does it write the `template` into the widget and save the config.
 
-Any template error is shown in the footer and the editor stays open, so nothing is lost.
+Any template error is shown in the status line and the editor stays open, so nothing is lost.
 
 ## The builder key
 
