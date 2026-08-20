@@ -573,8 +573,9 @@ function buildWidgetModal(type, values, structured, onSave) {
         c.wrapper.addEventListener("change", forget);
     }
 
-    const paste = pasteSection(schema, (pasted) => applyPastedWidget(controls, pasted, cleared));
-    const sections = [paste, basic];
+    const sections = type === "custom-api"
+        ? [pasteSection(schema, (pasted) => applyPastedWidget(controls, pasted, cleared)), basic]
+        : [basic];
     if (advanced.children.length) sections.push(collapsible("Advanced", advanced));
 
     openModal(schema.label, sections, () => {

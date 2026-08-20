@@ -12,9 +12,9 @@
     background-color: var(--color-widget-background-highlight);
 }
 
-/* Inputs sit on the card background, so they need a darker fill to read as inputs. */
-.capi-column .editor-input,
-.capi-source .editor-input {
+.capi-editor .capi-column .editor-input,
+.capi-editor .capi-source .editor-input,
+.capi-editor .capi-inspector .editor-input {
     background-color: var(--color-background);
 }
 
@@ -555,8 +555,17 @@
 
 .capi-field-with-action > .editor-btn {
     position: absolute;
-    top: -4px;
+    top: 0;
     right: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-text-base);
+    font-size: 1.1rem;
+}
+
+.capi-field-with-action > .editor-btn:hover {
+    color: var(--color-negative);
 }
 
 .capi-list-caption {
