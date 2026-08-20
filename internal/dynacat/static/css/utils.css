@@ -349,6 +349,11 @@ details[open] .summary::after {
     padding-bottom: 0;
 }
 
+.widget-content-frameless .expand-toggle-button,
+.widget-content-frameless .cards-grid.collapsible-container + .expand-toggle-button {
+    background: transparent;
+}
+
 .carousel-container {
     position: relative;
 }
