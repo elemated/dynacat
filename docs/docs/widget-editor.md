@@ -6,6 +6,10 @@ The widget editor is a fullscreen visual builder for `custom-api` widgets. You p
 
 It is an addition to the template textarea, not a replacement for it. Hand written templates keep working exactly as before, and everything on this page ends up as a normal `template` in your config.
 
+## Example widget made only with the editor
+
+![](images/widget-editor-example-widget.png)
+
 ## Opening the editor
 
 1. Open the page editor with the pencil icon in the header.
@@ -25,7 +29,7 @@ The editor takes over the whole screen and is split into four areas:
 | Top bar | The request url, **Preview**, **Refresh data**, a status line, **Cancel** and **Apply and save** |
 | Left pane | The subrequests, the block palette, and the list of fields found in the API response with a sample value for each |
 | Middle | A dotted canvas holding a preview of the widget |
-| Right | The inspector for the currently selected block, with one collapsible card per row list column |
+| Right | The inspector for the currently selected block |
 
 **Apply and save** writes the template and saves the widget in one step. **Cancel** leaves the saved widget exactly as it is.
 
