@@ -459,6 +459,13 @@ body.editing .editor-styling-trigger {
     color: var(--color-text-highlight);
 }
 
+.editor-modal-title-link {
+    align-self: flex-start;
+    text-decoration: underline;
+    text-decoration-color: var(--color-text-highlight);
+    text-underline-offset: 4px;
+}
+
 .editor-theme-picker {
     display: flex;
     justify-content: center;

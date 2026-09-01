@@ -23,6 +23,7 @@ type widgetTypeSchema struct {
 	Type   string              `json:"type"`
 	Label  string              `json:"label"`
 	Icon   string              `json:"icon"`
+	Docs   string              `json:"docs,omitempty"`
 	Hidden bool                `json:"hidden,omitempty"`
 	Fields []widgetFieldSchema `json:"fields"`
 }
@@ -31,48 +32,51 @@ var hiddenWidgetTypes = map[string]bool{
 	"html": true,
 }
 
+const docsBaseURL = "https://dynacat.artur.zone/#"
+
 type widgetTypeMeta struct {
 	Type  string
 	Label string
 	Icon  string
+	Docs  string
 }
 
 // Keep in sync with the newWidget switch in widget.go.
 var widgetTypeCatalog = []widgetTypeMeta{
-	{"calendar", "Calendar", "mdi:calendar"},
-	{"clock", "Clock", "mdi:clock-outline"},
-	{"weather", "Weather", "mdi:weather-partly-cloudy"},
-	{"bookmarks", "Bookmarks", "mdi:bookmark-outline"},
-	{"iframe", "IFrame", "mdi:application-brackets-outline"},
-	{"html", "HTML", "mdi:language-html5"},
-	{"hacker-news", "Hacker News", "mdi:newspaper-variant-outline"},
-	{"releases", "Releases", "mdi:tag-outline"},
-	{"videos", "Videos", "mdi:youtube"},
-	{"markets", "Markets", "mdi:chart-line"},
-	{"reddit", "Reddit", "mdi:reddit"},
-	{"rss", "RSS", "mdi:rss"},
-	{"monitor", "Monitor", "mdi:heart-pulse"},
-	{"twitch-top-games", "Twitch Top Games", "mdi:twitch"},
-	{"twitch-channels", "Twitch Channels", "mdi:twitch"},
-	{"lobsters", "Lobsters", "mdi:message-text-outline"},
-	{"change-detection", "Change Detection", "mdi:eye-outline"},
-	{"repository", "Repository", "mdi:source-repository"},
-	{"search", "Search", "mdi:magnify"},
-	{"stopwatch", "Stopwatch", "mdi:timer-outline"},
-	{"extension", "Extension", "mdi:puzzle-outline"},
-	{"group", "Group", "mdi:tab"},
-	{"dns-stats", "DNS Stats", "mdi:dns-outline"},
-	{"split-column", "Split Column", "mdi:view-column-outline"},
-	{"custom-api", "Custom API", "mdi:api"},
-	{"dynawidgets", "Dynawidgets", "mdi:widgets-outline"},
-	{"docker-containers", "Docker Containers", "mdi:docker"},
-	{"docker-controller", "Docker Controller", "mdi:docker"},
-	{"server-stats", "Server Stats", "mdi:server"},
-	{"speedtest", "Speedtest", "mdi:speedometer"},
-	{"to-do", "To-do", "mdi:checkbox-marked-outline"},
-	{"playing", "Now Playing", "mdi:play-circle-outline"},
-	{"latest-media", "Latest Media", "mdi:multimedia"},
-	{"torrenting", "Torrenting", "mdi:download-network-outline"},
+	{"calendar", "Calendar", "mdi:calendar", "configuration/calendar"},
+	{"clock", "Clock", "mdi:clock-outline", "configuration/clock"},
+	{"weather", "Weather", "mdi:weather-partly-cloudy", "configuration/weather"},
+	{"bookmarks", "Bookmarks", "mdi:bookmark-outline", "configuration/bookmarks"},
+	{"iframe", "IFrame", "mdi:application-brackets-outline", "configuration/iframe"},
+	{"html", "HTML", "mdi:language-html5", "configuration/html"},
+	{"hacker-news", "Hacker News", "mdi:newspaper-variant-outline", "configuration/hacker-news"},
+	{"releases", "Releases", "mdi:tag-outline", "configuration/releases"},
+	{"videos", "Videos", "mdi:youtube", "configuration/videos"},
+	{"markets", "Markets", "mdi:chart-line", "configuration/markets"},
+	{"reddit", "Reddit", "mdi:reddit", "configuration/reddit"},
+	{"rss", "RSS", "mdi:rss", "configuration/rss"},
+	{"monitor", "Monitor", "mdi:heart-pulse", "configuration/monitor"},
+	{"twitch-top-games", "Twitch Top Games", "mdi:twitch", "configuration/twitch-top-games"},
+	{"twitch-channels", "Twitch Channels", "mdi:twitch", "configuration/twitch-channels"},
+	{"lobsters", "Lobsters", "mdi:message-text-outline", "configuration/lobsters"},
+	{"change-detection", "Change Detection", "mdi:eye-outline", "configuration/changedetectionio"},
+	{"repository", "Repository", "mdi:source-repository", "configuration/repository"},
+	{"search", "Search", "mdi:magnify", "configuration/search-widget"},
+	{"stopwatch", "Stopwatch", "mdi:timer-outline", "configuration/stopwatch"},
+	{"extension", "Extension", "mdi:puzzle-outline", "configuration/extension"},
+	{"group", "Group", "mdi:tab", "configuration/group"},
+	{"dns-stats", "DNS Stats", "mdi:dns-outline", "configuration/dns-stats"},
+	{"split-column", "Split Column", "mdi:view-column-outline", "configuration/split-column"},
+	{"custom-api", "Custom API", "mdi:api", "custom-api"},
+	{"dynawidgets", "Dynawidgets", "mdi:widgets-outline", "configuration/dynawidgets"},
+	{"docker-containers", "Docker Containers", "mdi:docker", "configuration/docker-containers"},
+	{"docker-controller", "Docker Controller", "mdi:docker", "configuration/docker-controller"},
+	{"server-stats", "Server Stats", "mdi:server", "configuration/server-stats"},
+	{"speedtest", "Speedtest", "mdi:speedometer", "configuration/speedtest"},
+	{"to-do", "To-do", "mdi:checkbox-marked-outline", "configuration/todo"},
+	{"playing", "Now Playing", "mdi:play-circle-outline", "configuration/currently-playing"},
+	{"latest-media", "Latest Media", "mdi:multimedia", "configuration/latest-media"},
+	{"torrenting", "Torrenting", "mdi:download-network-outline", "configuration/torrenting"},
 }
 
 type fieldAnnotation struct {
@@ -308,10 +312,16 @@ func widgetSchema(meta widgetTypeMeta) (widgetTypeSchema, error) {
 	applyFieldHints(fields, "", ann)
 	markRequiredFields(fields, "", requiredFields[meta.Type])
 
+	docs := ""
+	if meta.Docs != "" {
+		docs = docsBaseURL + meta.Docs
+	}
+
 	return widgetTypeSchema{
 		Type:   meta.Type,
 		Label:  meta.Label,
 		Icon:   string(newCustomIconField(meta.Icon).URL),
+		Docs:   docs,
 		Hidden: hiddenWidgetTypes[meta.Type],
 		Fields: fields,
 	}, nil

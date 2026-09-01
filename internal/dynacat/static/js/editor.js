@@ -633,7 +633,7 @@ function buildWidgetModal(type, values, structured, onSave) {
             else fields[c.field.name] = value;
         }
         return onSave(fields, rawFields);
-    }, type === "custom-api" ? customAPIEditorButton(controls, hiddenValues, cleared) : null);
+    }, type === "custom-api" ? customAPIEditorButton(controls, hiddenValues, cleared) : null, schema.docs);
 }
 
 // Resolves once the modal has actually saved, so the editor can stay on top until then.
@@ -1743,10 +1743,23 @@ function hslToHex(h, s, l) {
 // Generic modal
 //
 
-function openModal(title, sections, onSave, footerLeft) {
+// Falls back to plain text when the schema carries no documentation URL.
+function modalTitle(title, docsURL) {
+    if (!docsURL) return div("editor-modal-title", title);
+
+    const el = document.createElement("a");
+    el.className = "editor-modal-title editor-modal-title-link";
+    el.href = docsURL;
+    el.target = "_blank";
+    el.rel = "noreferrer";
+    el.textContent = title;
+    return el;
+}
+
+function openModal(title, sections, onSave, footerLeft, docsURL) {
     const overlay = div("editor-ui editor-modal-overlay");
     const modal = div("editor-modal");
-    modal.append(div("editor-modal-title", title));
+    modal.append(modalTitle(title, docsURL));
 
     const bodyEl = div("editor-modal-body");
     for (const s of sections) bodyEl.append(s);
