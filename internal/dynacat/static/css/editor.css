@@ -1,17 +1,74 @@
 @import "customapi-editor.css";
 
-.editor-palette {
+.editor-palette-dock {
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
     z-index: 40;
     display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    pointer-events: none;
+}
+
+.editor-palette-search {
+    --palette-notch: 12px;
+    position: relative;
+    display: flex;
+    padding: 10px 10px 6px;
+    pointer-events: auto;
+    background: var(--color-popover-background);
+    border-top-right-radius: var(--border-radius);
+}
+
+.editor-palette-search::after {
+    content: "";
+    position: absolute;
+    left: 100%;
+    bottom: 0;
+    width: var(--palette-notch);
+    height: var(--palette-notch);
+    background: var(--color-popover-background);
+    mask: radial-gradient(circle var(--palette-notch) at 100% 0, transparent 99%, #000 100%);
+    -webkit-mask: radial-gradient(circle var(--palette-notch) at 100% 0, transparent 99%, #000 100%);
+}
+
+.editor-palette-search .editor-input {
+    width: 190px;
+    max-width: 50vw;
+    padding: 4px 9px;
+    font-size: 1.2rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--color-separator);
+    background-color: var(--color-background);
+    color: var(--color-text-subdue);
+    font-family: inherit;
+}
+
+.editor-palette-search .editor-input::placeholder {
+    color: var(--color-text-subdue);
+}
+
+.editor-palette-search .editor-input:focus {
+    outline: none;
+}
+
+.editor-palette-empty {
+    align-self: center;
+    padding: 8px 6px;
+    font-size: 1.1rem;
+    color: var(--color-text-subdue);
+}
+
+.editor-palette {
+    width: 100%;
+    display: flex;
     gap: 6px;
     overflow-x: auto;
     padding: 10px 16px;
+    pointer-events: auto;
     background: var(--color-popover-background);
-    border-top: 1px solid var(--color-separator);
     scrollbar-width: thin;
 }
 
@@ -37,6 +94,11 @@
     user-select: none;
     opacity: 0.75;
     transition: opacity 0.15s, background 0.15s;
+}
+
+.editor-palette-item[hidden],
+.editor-palette-empty[hidden] {
+    display: none;
 }
 
 .editor-palette-item:hover {
@@ -66,7 +128,7 @@
 }
 
 body.editing {
-    padding-bottom: 92px;
+    padding-bottom: 132px;
 }
 
 body.editing .widget + .widget {
@@ -326,25 +388,25 @@ body.editing .page-column:not(:has(> .widget))::after {
     display: inline-flex;
     align-self: center;
     align-items: center;
-    gap: 4px;
-    padding: 3px;
-    border-radius: 999px;
-    background: var(--color-widget-background);
-    border: 1px solid var(--color-separator);
+    gap: 10px;
+}
+
+.editor-page-tools-divider {
+    width: 1px;
+    height: 16px;
+    background: var(--color-separator);
 }
 
 .editor-page-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 11px;
-    border-radius: 999px;
     color: var(--color-text-subdue);
     font-size: 0.82em;
     line-height: 1;
     white-space: nowrap;
     cursor: pointer;
-    transition: color 0.15s, background 0.15s;
+    transition: color 0.15s;
 }
 
 .editor-page-btn .editor-icon-inline svg {
@@ -354,7 +416,6 @@ body.editing .page-column:not(:has(> .widget))::after {
 
 .editor-page-btn:hover {
     color: var(--color-text-highlight);
-    background: var(--color-widget-background-highlight);
 }
 
 .editor-add-page:hover {
@@ -413,6 +474,7 @@ body.editing .editor-styling-trigger {
     flex-direction: column;
     gap: 14px;
     min-height: 0;
+    padding-bottom: 4px;
     overflow-y: auto;
 }
 

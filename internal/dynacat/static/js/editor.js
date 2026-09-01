@@ -50,7 +50,13 @@ async function enterEditor() {
     state.active = true;
     sessionStorage.setItem("dynacat-editing", "1");
     document.body.classList.add("editing");
-    document.getElementById("editor-toggle")?.classList.add("editor-toggle-active");
+    const toggleBtn = document.getElementById("editor-toggle");
+    toggleBtn?.classList.add("editor-toggle-active");
+    if (toggleBtn) {
+        toggleBtn.title = "Exit editor";
+        toggleBtn.querySelector(".editor-toggle-icon").outerHTML =
+            '<svg class="editor-toggle-icon editor-toggle-icon-back" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 13.5C20 17.09 17.09 20 13.5 20H6V18H13.5C16 18 18 16 18 13.5S16 9 13.5 9H7.83L10.91 12.09L9.5 13.5L4 8L9.5 2.5L10.92 3.91L7.83 7H13.5C17.09 7 20 9.91 20 13.5Z" /></svg>';
+    }
 
     buildPalette();
     buildAddPageButton();
@@ -160,12 +166,15 @@ function waitForServerReload(before, timeout = 6000) {
 //
 
 function buildPalette() {
-    const dock = div("editor-ui editor-palette");
-    dock.addEventListener("wheel", (e) => {
+    const dock = div("editor-ui editor-palette-dock");
+    const list = div("editor-palette");
+    list.addEventListener("wheel", (e) => {
         if (!e.deltaY) return;
         e.preventDefault();
-        dock.scrollLeft += e.deltaY;
+        list.scrollLeft += e.deltaY;
     }, { passive: false });
+
+    const items = [];
     const sorted = [...state.schemas].sort((a, b) => a.label.localeCompare(b.label));
     for (const schema of sorted) {
         if (schema.hidden) continue;
@@ -175,8 +184,33 @@ function buildPalette() {
         if (schema.icon) item.append(maskIcon("editor-palette-icon", schema.icon));
         item.append(div("editor-palette-name", schema.label));
         item.addEventListener("dragstart", () => (state.drag = { type: schema.type }));
-        dock.append(item);
+        list.append(item);
+        items.push({ el: item, haystack: `${schema.label} ${schema.type}`.toLowerCase() });
     }
+
+    const empty = div("editor-palette-empty", "No widgets found");
+    empty.hidden = true;
+    list.append(empty);
+
+    const search = div("editor-palette-search");
+    const input = inputEl("text");
+    input.placeholder = "Search...";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.addEventListener("input", () => {
+        const query = input.value.trim().toLowerCase();
+        let matches = 0;
+        for (const { el, haystack } of items) {
+            const hit = !query || haystack.includes(query);
+            el.hidden = !hit;
+            if (hit) matches++;
+        }
+        empty.hidden = matches > 0;
+        list.scrollLeft = 0;
+    });
+    search.append(input);
+
+    dock.append(search, list);
     document.body.append(dock);
 }
 
@@ -401,7 +435,9 @@ function buildAddPageButton() {
     const group = div("editor-ui editor-page-tools");
     group.append(
         pageToolButton("editor-add-page", iconPlus, "Add page", "Create a new page", openLayoutModal),
+        div("editor-page-tools-divider"),
         pageToolButton("editor-edit-page", iconCog, "Edit page", "Edit this page's name, icon and options", openEditPageModal),
+        div("editor-page-tools-divider"),
         pageToolButton("editor-remove-page", iconTrash, "Remove page", "Delete this page", removeCurrentPage),
     );
     nav.append(group);

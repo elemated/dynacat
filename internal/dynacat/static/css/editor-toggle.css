@@ -7,15 +7,17 @@
 .editor-toggle-icon {
     width: 1.8rem;
     height: 1.8rem;
-    stroke: var(--color-text-subdue);
-    transition: stroke 0.2s;
-    transform: translateY(2px);
+    stroke: currentColor;
+    fill: currentColor;
+    color: var(--color-text-subdue);
+    transition: color 0.2s;
 }
 
 #editor-toggle:hover .editor-toggle-icon {
-    stroke: var(--color-text-highlight);
+    color: var(--color-text-highlight);
 }
 
-.editor-toggle-active .editor-toggle-icon {
-    stroke: var(--color-primary);
+.editor-toggle-icon-back {
+    width: 1.5rem;
+    height: 1.5rem;
 }

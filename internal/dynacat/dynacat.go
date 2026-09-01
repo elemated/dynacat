@@ -72,6 +72,7 @@ type application struct {
 	sseMu                sync.RWMutex
 	sseClients           map[*sseClient]struct{}
 	DynamicUpdateEnabled bool
+	EditorEnabled        bool
 
 	apiRateMu       sync.Mutex
 	apiRateRequests map[string]*apiRateWindow
@@ -246,6 +247,11 @@ func newApplication(c *config) (*application, error) {
 	}
 
 	app.DynamicUpdateEnabled = dynamicUpdateEnabled
+
+	app.EditorEnabled = editorEnabledFromEnv()
+	if !app.EditorEnabled {
+		warnAboutIgnoredEditorConfig(config)
+	}
 
 	app.imageCache = newImageCache(config.Server.BaseURL, config.Server.CacheDir)
 
@@ -994,12 +1000,14 @@ func (a *application) server() (func() error, func() error) {
 		mux.HandleFunc("OPTIONS /api/v1/{path...}", a.handleAPIPreflight)
 	}
 
-	mux.HandleFunc("GET /api/editor/schema", a.handleEditorSchema)
-	mux.HandleFunc("GET /api/editor/status", a.handleEditorStatus)
-	mux.HandleFunc("GET /api/editor/config", a.handleEditorConfigLoad)
-	mux.HandleFunc("POST /api/editor/config", a.handleEditorConfigSave)
-	mux.HandleFunc("POST /api/editor/convert", a.handleEditorConvert)
-	mux.HandleFunc("POST /api/editor/custom-api/preview", a.handleEditorCustomAPIPreview)
+	if a.EditorEnabled {
+		mux.HandleFunc("GET /api/editor/schema", a.handleEditorSchema)
+		mux.HandleFunc("GET /api/editor/status", a.handleEditorStatus)
+		mux.HandleFunc("GET /api/editor/config", a.handleEditorConfigLoad)
+		mux.HandleFunc("POST /api/editor/config", a.handleEditorConfigSave)
+		mux.HandleFunc("POST /api/editor/convert", a.handleEditorConvert)
+		mux.HandleFunc("POST /api/editor/custom-api/preview", a.handleEditorCustomAPIPreview)
+	}
 
 	mux.Handle(
 		fmt.Sprintf("GET /static/%s/{path...}", getStaticFSHash()),

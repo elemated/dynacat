@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -11,10 +12,50 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
+
+var editorConfigWarnOnce sync.Once
+
+// editorEnabledFromEnv reports whether the web UI editor is available at all.
+func editorEnabledFromEnv() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ENABLE_EDITOR"))) {
+	case "false", "0", "f", "no", "off":
+		return false
+	}
+	return true
+}
+
+func warnAboutIgnoredEditorConfig(c *config) {
+	var ignored []string
+
+	if c.Server.AllowEditing {
+		ignored = append(ignored, "server.allow-editing")
+	}
+	if len(c.Server.EditingUsers) > 0 {
+		ignored = append(ignored, "server.editing-users")
+	}
+	if len(c.Server.EditingGroups) > 0 {
+		ignored = append(ignored, "server.editing-groups")
+	}
+	for username, u := range c.Auth.Users {
+		if u != nil && len(u.RestrictEditing) > 0 {
+			ignored = append(ignored, fmt.Sprintf("auth.users.%s.restrict-editing", username))
+		}
+	}
+	if len(ignored) == 0 {
+		return
+	}
+
+	slices.Sort(ignored)
+	editorConfigWarnOnce.Do(func() {
+		slog.Warn("Editor is disabled through ENABLE_EDITOR, editor-specific configuration is ignored",
+			"settings", strings.Join(ignored, ", "))
+	})
+}
 
 type editorConfigView struct {
 	Pages        []editorPageView   `json:"pages"`
@@ -96,6 +137,9 @@ func (a *application) userRestrictEditing(user *authenticatedUser) []string {
 
 // EditingAllowedForPage reports whether user may edit page p (restrict-editing/allow-editing rules).
 func (a *application) EditingAllowedForPage(user *authenticatedUser, p *page) bool {
+	if !a.EditorEnabled {
+		return false
+	}
 	if p == nil || !a.canUserAccessPage(user, p) {
 		return false
 	}
@@ -115,6 +159,9 @@ func (a *application) editingAllowedForPageIndex(user *authenticatedUser, i int)
 // UserAllowedToEdit reports whether user may use the web UI editor at all (editing-users/editing-groups).
 // Password-based users have no groups, so editing-groups only ever matches OIDC users.
 func (a *application) UserAllowedToEdit(user *authenticatedUser) bool {
+	if !a.EditorEnabled {
+		return false
+	}
 	users := a.Config.Server.EditingUsers
 	groups := a.Config.Server.EditingGroups
 	if len(users) == 0 && len(groups) == 0 {
