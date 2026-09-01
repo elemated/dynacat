@@ -609,6 +609,8 @@ function buildWidgetModal(type, values, structured, onSave) {
         c.wrapper.addEventListener("change", forget);
     }
 
+    if (type === "search") wireSearchEngineFields(controls);
+
     const sections = type === "custom-api"
         ? [pasteSection(schema, (pasted) => applyPastedWidget(controls, pasted, cleared)), basic]
         : [basic];
@@ -1207,6 +1209,37 @@ function renderSearchEngineField(field, value) {
             customInput.style.display = select.value === "custom" ? "" : "none";
         },
     };
+}
+
+// Degoog derives both its search and its suggestion URL from the instance URL,
+// so picking it swaps the provider field for the instance URL one. The hidden
+// field is written as "" on save, which drops the key from the config.
+function wireSearchEngineFields(controls) {
+    const byName = Object.fromEntries(controls.map((c) => [c.field.name, c]));
+    const engine = byName["search-engine"];
+    const degoogURL = byName["degoog-url"];
+    const select = engine?.wrapper.querySelector("select");
+    if (!select || !degoogURL) return;
+
+    const provider = byName["autocomplete-provider"];
+    const isDegoog = () => select.value === "degoog";
+
+    const readURL = degoogURL.read;
+    degoogURL.read = () => (isDegoog() ? readURL() : "");
+
+    if (provider) {
+        const readProvider = provider.read;
+        const extraProvider = provider.extra;
+        provider.read = () => (isDegoog() ? "" : readProvider());
+        provider.extra = () => (isDegoog() ? {} : extraProvider());
+    }
+
+    const sync = () => {
+        degoogURL.wrapper.style.display = isDegoog() ? "" : "none";
+        if (provider) provider.wrapper.style.display = isDegoog() ? "none" : "";
+    };
+    select.addEventListener("change", sync);
+    sync();
 }
 
 function renderAutocompleteProviderField(field, value, autocompleteValue) {

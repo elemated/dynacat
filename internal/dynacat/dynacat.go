@@ -80,7 +80,7 @@ type application struct {
 	imageProxyMu   sync.RWMutex
 	imageProxyURLs map[string]imageProxyInfo
 
-	searchAutocompleteURLs map[uint64]string
+	searchAutocompleteURLs map[uint64]searchAutocompleteSource
 
 	imageCache *imageCache
 }
@@ -98,7 +98,7 @@ func newApplication(c *config) (*application, error) {
 		sseClients:             make(map[*sseClient]struct{}),
 		imageProxyURLs:         make(map[string]imageProxyInfo),
 		todoListIDToPage:       make(map[string]*page),
-		searchAutocompleteURLs: make(map[uint64]string),
+		searchAutocompleteURLs: make(map[uint64]searchAutocompleteSource),
 	}
 	config := &app.Config
 

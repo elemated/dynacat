@@ -203,18 +203,22 @@ func (a *application) handleSearchAutocompleteRequest(w http.ResponseWriter, r *
 			return
 		}
 
-		urlTemplate, ok := a.searchAutocompleteURLs[widgetID]
+		source, ok := a.searchAutocompleteURLs[widgetID]
 		if !ok {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("[]"))
 			return
 		}
 
-		customURL := strings.ReplaceAll(urlTemplate, "{QUERY}", url.QueryEscape(query))
-		if err := validateImageProxyURL(customURL); err != nil {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("[]"))
-			return
+		customURL := strings.ReplaceAll(source.URL, "{QUERY}", url.QueryEscape(query))
+		// Self-hosted instances named in the config are allowed to sit on a private
+		// address, unlike URLs that could otherwise be probed through this endpoint.
+		if !source.AllowPrivate {
+			if err := validateImageProxyURL(customURL); err != nil {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("[]"))
+				return
+			}
 		}
 
 		a.respondWithOpenSearchSuggestions(w, r, customURL)

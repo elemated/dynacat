@@ -3,6 +3,7 @@ package dynacat
 import (
 	"fmt"
 	"html/template"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -23,11 +24,20 @@ type searchBookmarkMatch struct {
 	Icon   customIconField
 }
 
+// A suggestion endpoint taken from the config, which may point at a private
+// instance the user runs themselves.
+type searchAutocompleteSource struct {
+	URL          string
+	AllowPrivate bool
+}
+
 type searchWidget struct {
 	widgetBase                `yaml:",inline"`
 	cachedHTML                template.HTML         `yaml:"-"`
 	Frameless                 bool                  `yaml:"frameless"`
 	SearchEngine              string                `yaml:"search-engine"`
+	DegoogURL                 string                `yaml:"degoog-url"`
+	autocompleteAllowPrivate  bool                  `yaml:"-"`
 	AutocompleteEnabled       *bool                 `yaml:"autocomplete"`
 	Autocomplete              bool                  `yaml:"-"`
 	AutocompleteProvider      string                `yaml:"autocomplete-provider"`
@@ -57,6 +67,29 @@ var searchEngines = map[string]string{
 	"brave":      "https://search.brave.com/search?q={QUERY}",
 }
 
+// Degoog serves search and OpenSearch suggestions on fixed paths, so the
+// instance URL is all that's needed to derive both.
+func (widget *searchWidget) applyDegoogURLs() error {
+	base := strings.TrimRight(strings.TrimSpace(widget.DegoogURL), "/")
+	if base == "" {
+		return fmt.Errorf("degoog-url is required when search-engine is degoog")
+	}
+
+	parsed, err := url.Parse(base)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("degoog-url must be a full URL, e.g. https://degoog.example.com")
+	}
+
+	widget.SearchEngine = base + "/search?q={QUERY}"
+
+	if widget.AutocompleteProvider == "" {
+		widget.AutocompleteProvider = base + "/api/suggest/opensearch?q={QUERY}"
+		widget.autocompleteAllowPrivate = true
+	}
+
+	return nil
+}
+
 func (widget *searchWidget) initialize() error {
 	widget.withTitle("Search").withError(nil)
 	widget.UpdateInterval = nil
@@ -77,6 +110,12 @@ func (widget *searchWidget) initialize() error {
 		widget.Autocomplete = true
 	} else {
 		widget.Autocomplete = *widget.AutocompleteEnabled
+	}
+
+	if widget.SearchEngine == "degoog" {
+		if err := widget.applyDegoogURLs(); err != nil {
+			return err
+		}
 	}
 
 	if widget.AutocompleteProvider == "custom" && widget.DeprecatedAutocompleteURL != "" {
@@ -124,7 +163,10 @@ func (widget *searchWidget) setProviders(providers *widgetProviders) {
 		widget.Bangs[i].Icon.prepare(providers)
 	}
 	if widget.AutocompleteProviderKind() == "custom" && providers.app != nil {
-		providers.app.searchAutocompleteURLs[widget.GetID()] = widget.AutocompleteProvider
+		providers.app.searchAutocompleteURLs[widget.GetID()] = searchAutocompleteSource{
+			URL:          widget.AutocompleteProvider,
+			AllowPrivate: widget.autocompleteAllowPrivate,
+		}
 	}
 	widget.cachedHTML = widget.renderTemplate(widget, searchWidgetTemplate)
 }

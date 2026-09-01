@@ -206,7 +206,8 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"instance-url":   {Hint: "Base URL of your changedetection.io instance."},
 	},
 	"search": {
-		"search-engine":         {Options: []string{"duckduckgo", "google", "bing", "perplexity", "kagi", "startpage", "qwant", "brave", "custom"}},
+		"search-engine":         {Options: []string{"duckduckgo", "google", "bing", "perplexity", "kagi", "startpage", "qwant", "brave", "degoog", "custom"}},
+		"degoog-url":            {Hint: "Base URL of your Degoog instance."},
 		"autocomplete-provider": {Options: []string{"duckduckgo", "brave", "custom"}},
 		"bangs.shortcut":        {Hint: `The prefix typed before a search, e.g. "yt" for !yt.`},
 	},

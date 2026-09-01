@@ -2649,6 +2649,7 @@ Preview:
 | Name | Type | Required | Default |
 | ---- | ---- | -------- | ------- |
 | search-engine | string | no | duckduckgo |
+| degoog-url | string | when using `degoog` | |
 | new-tab | boolean | no | false |
 | autofocus | boolean | no | false |
 | target | string | no | _blank |
@@ -2671,6 +2672,19 @@ Either a value from the table below or a URL to a custom search engine. Use `{QU
 | kagi | `https://kagi.com/search?q={QUERY}` |
 | startpage | `https://www.startpage.com/search?q={QUERY}` |
 | qwant | `https://www.qwant.com/?q={QUERY}&t=web` |
+| brave | `https://search.brave.com/search?q={QUERY}` |
+| degoog | your own instance, see [`degoog-url`](#degoog-url) |
+
+##### `degoog-url`
+The base URL of your [Degoog](https://github.com/degoog-org/degoog) instance, used when `search-engine` is set to `degoog`. Searches are sent to `/search?q=` and, unless you set your own [`autocomplete-provider`](#autocomplete-provider), suggestions come from that same instance through its `/api/suggest/opensearch` endpoint.
+
+```yaml
+- type: search
+  search-engine: degoog
+  degoog-url: https://degoog.example.com
+```
+
+Because the instance is yours, it may live on a private address such as `http://192.168.1.10:4444` — the suggestion request is made server-side by Dynacat, so the browser never sees the URL.
 
 ##### `new-tab`
 When set to `true`, swaps the shortcuts for showing results in the same or new tab, defaulting to showing results in a new tab.
