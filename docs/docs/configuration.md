@@ -2802,6 +2802,13 @@ In the event that the CPU temperature goes over 80°C, a flame icon will appear 
 
 ![](images/server-stats-flame-icon.png)
 
+When running in a container the reported platform is the one of the image (usually `alpine`) because the host's `/etc/os-release` is not visible from inside. Mount it to have the host's distribution shown instead:
+
+```yaml
+volumes:
+  - /etc/os-release:/host/etc/os-release:ro
+```
+
 #### Properties
 | Name | Type | Required | Default |
 | ---- | ---- | -------- | ------- |
@@ -2840,7 +2847,21 @@ Whether to hide the swap usage.
 | mountpoints | map\[string\]object | no |  |
 
 ###### `cpu-temp-sensor`
-The name of the sensor to use for the CPU temperature. When not provided the widget will attempt to find the correct one, if it fails to do so the temperature will not be displayed. To view the available sensors you can use `sensors` command.
+The name of the sensor to use for the CPU temperature. When not provided the widget will attempt to find the correct one, if it fails to do so the temperature will not be displayed. To view the available sensors you can use the `sensors` command.
+
+Both the chip name and the `chip/Label` form printed by `sensors` are accepted, as is a bare label. For a chip listed as:
+
+```
+k10temp-pci-00c3
+Adapter: PCI adapter
+Tctl:         +44.0°C
+Tccd1:        +40.5°C
+```
+
+any of `k10temp-pci-00c3`, `k10temp`, `k10temp-pci-00c3/Tctl` or `Tctl` will work. When only the chip is given and it reports several temperatures, the one representing the whole package is picked. If the sensor cannot be matched, the names Dynacat can see are listed in the log so you can pick one of them.
+
+> [!NOTE]
+> Inside a container the sensors are only visible if `/sys` is readable, which is the case by default. Temperatures reported by `sensors` on the host but missing from the log usually mean the corresponding kernel module is not loaded.
 
 ###### `hide-mountpoints-by-default`
 If set to `true` you'll have to manually make each mountpoint visible by adding a `hide: false` property to it like so:

@@ -483,7 +483,9 @@
     opacity: 1;
 }
 
+/* Relative so the rows draw over the band layer behind them. */
 .capi-list {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -513,6 +515,14 @@
     opacity: 1;
 }
 
+/* A drop replaces the column it lands on, so its cells come back to full strength under the band. */
+.capi-list-cell-over,
+.capi-list-cell.capi-list-cell-over,
+.capi-list-cell.capi-list-cell-muted.capi-list-cell-over {
+    opacity: 1;
+    background: transparent;
+}
+
 /* Header cells are plain divs, so they need the .capi-list-cell padding to line up with the values. */
 .capi-list-head > div {
     padding: 0 5px;
@@ -538,6 +548,101 @@
     flex-direction: column;
     gap: 6px;
     width: 100%;
+}
+
+.capi-list-body {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.capi-list-stack {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Both layers repeat the column widths of a row, so they line up without measuring anything. */
+.capi-col-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.capi-col-bands {
+    pointer-events: none;
+}
+
+/* A column is a drop target over its whole height, not only where its text happens to sit. */
+.capi-col-hits {
+    pointer-events: none;
+}
+
+.capi-drag-active .capi-col-hits {
+    pointer-events: auto;
+}
+
+/* One band down the whole column, so the target reads as a single area instead of a box per cell. */
+.capi-col-band {
+    position: relative;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+
+.capi-col-band::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: var(--border-radius);
+    background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.capi-col-band.capi-col-band-on {
+    opacity: 1;
+}
+
+/* The header draws over the band layer, so the highlight sits behind the labels. */
+.capi-list-head {
+    position: relative;
+}
+
+/* Adding a column is a drop only affordance, so it appears once a field is in flight. */
+.capi-col-add {
+    display: none;
+    flex: 0 0 34px;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed var(--color-separator);
+    border-radius: var(--border-radius);
+    color: var(--color-text-subdue);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.capi-drag-active .capi-col-add {
+    display: flex;
+}
+
+.capi-col-add:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.capi-col-add.capi-col-add-over {
+    border-style: solid;
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+    color: var(--color-primary);
+}
+
+.capi-col-add svg {
+    width: 12px;
+    height: 12px;
 }
 
 .capi-hidden-by-rule {

@@ -1,6 +1,7 @@
 const PD = typeof pageData !== "undefined" ? pageData : window.pageData;
 const API = `${PD.baseURL}/api/editor`;
 
+const PICK_FIELD = "[ pick a field ]";
 const MAX_CELLS = 4;
 const MAX_FIELDS = 200;
 const MAX_DEPTH = 4;
@@ -375,28 +376,35 @@ function startDrag(element, payload) {
         event.dataTransfer.effectAllowed = "copy";
         event.dataTransfer.setData("text/plain", "");
         element.classList.add("capi-dragging");
+        ui.overlay.classList.add("capi-drag-active");
     });
     element.addEventListener("dragend", () => {
         drag = null;
         element.classList.remove("capi-dragging");
+        ui.overlay.classList.remove("capi-drag-active");
     });
 }
 
-function dropTarget(element, className, accepts, onDrop) {
+function dropTarget(element, className, accepts, onDrop, onHover) {
+    const mark = (active) => {
+        element.classList.toggle(className, active);
+        onHover?.(active);
+    };
+
     element.addEventListener("dragover", (event) => {
         if (!drag || !accepts(drag)) return;
         event.preventDefault();
         event.stopPropagation();
-        element.classList.add(className);
+        mark(true);
     });
     element.addEventListener("dragleave", (event) => {
-        if (!element.contains(event.relatedTarget)) element.classList.remove(className);
+        if (!element.contains(event.relatedTarget)) mark(false);
     });
     element.addEventListener("drop", (event) => {
         if (!drag || !accepts(drag)) return;
         event.preventDefault();
         event.stopPropagation();
-        element.classList.remove(className);
+        mark(false);
         onDrop(drag);
     });
 }
@@ -837,6 +845,8 @@ function previewBlock(block, r, c) {
     }
 
     const wrapper = div("capi-list-wrapper");
+    const body = div("capi-list-body");
+    const stack = div("capi-list-stack");
     const list = div("capi-list list list-gap-10");
     const limit = block.limit || 5;
 
@@ -845,18 +855,27 @@ function previewBlock(block, r, c) {
     // Fade the other columns so the selected one stands out without extra boxes.
     const selectedCol = state.sel && state.sel.r === r && state.sel.c === c ? state.sel.col : null;
     const muted = (index) => (selectedCol !== null && selectedCol !== index ? " capi-list-cell-muted" : "");
+    const columnCells = block.columns.map(() => []);
+    const bands = div("capi-col-layer capi-col-bands");
+    const hits = div("capi-col-layer capi-col-hits");
+    stack.append(bands);
+
+    const markColumn = (index, active) => {
+        columnCells[index].forEach((cell) => cell.classList.toggle("capi-list-cell-over", active));
+        bands.children[index]?.classList.toggle("capi-col-band-on", active);
+    };
 
     if (block.columns.some((column) => (column.label || "").trim())) {
         const head = div("capi-list-head flex items-center gap-10 size-h6 uppercase color-subdue");
         block.columns.forEach((column, index) => {
             const align = columnAlign(column, index, block.columns.length) + muted(index);
-            if (column.kind !== "icon") return head.append(div(align, column.label || ""));
+            const cell = column.kind === "icon" ? div(`${align} flex items-center justify-end`) : div(align, column.label || "");
+            if (column.kind === "icon") cell.append(el("span", "nowrap", column.label || ""));
 
-            const cell = div(`${align} flex items-center justify-end`);
-            cell.append(el("span", "nowrap", column.label || ""));
+            columnCells[index].push(cell);
             head.append(cell);
         });
-        wrapper.append(head);
+        stack.append(head);
     }
 
     sortItems(block, listItems(block)).slice(0, limit).forEach((item) => {
@@ -864,6 +883,7 @@ function previewBlock(block, r, c) {
         block.columns.forEach((column, index) => {
             const cell = column.kind === "icon" ? previewIconColumn(column, item) : previewColumn(column, item);
             cell.className += ` ${columnAlign(column, index, block.columns.length)}${muted(index)}`;
+            columnCells[index].push(cell);
 
             cell.addEventListener("click", (event) => {
                 event.stopPropagation();
@@ -872,20 +892,58 @@ function previewBlock(block, r, c) {
                 renderAll();
             });
 
-            dropTarget(cell, "capi-cell-drop", (d) => d.type === "field" || d.type === "item-field", (d) => {
-                state.sel = { r, c, col: index };
-                state.reveal = true;
-                if (d.type === "item-field") bindItemField(block, d.entry);
-                else bindField(d.src, d.entry, { block, col: index });
-            });
-
             line.append(cell);
         });
         list.append(line);
     });
 
-    wrapper.append(list);
+    block.columns.forEach((column, index) => {
+        const align = columnAlign(column, index, block.columns.length);
+        bands.append(div(`capi-col-band ${align}`));
+
+        const hit = div(`capi-col-hit ${align}`);
+        hit.title = "Drop a field here to replace this column";
+        dropTarget(hit, "capi-col-hit-over", (d) => d.type === "field" || d.type === "item-field", (d) => {
+            state.sel = { r, c, col: index };
+            state.reveal = true;
+            if (d.type === "item-field") bindItemField(block, d.entry);
+            else bindField(d.src, d.entry, { block, col: index });
+        }, (active) => markColumn(index, active));
+
+        hits.append(hit);
+    });
+
+    stack.append(list, hits);
+    body.append(stack, columnAddZone(block, r, c));
+    wrapper.append(body);
     return wrapper;
+}
+
+// The counterpart to dropping on a column: this one appends a column instead of replacing one.
+function columnAddZone(block, r, c) {
+    const zone = div("capi-col-add");
+    zone.innerHTML = iconPlus;
+    zone.title = "Drop a field here to add a column";
+
+    dropTarget(zone, "capi-col-add-over", (d) => d.type === "field" || d.type === "item-field", (d) => {
+        if (d.type === "field" && !columnFieldFits(block, d)) {
+            return ctx.toast("Pick a field from inside the list array", "negative");
+        }
+
+        block.columns.push(newValue("item"));
+        const index = block.columns.length - 1;
+        state.sel = { r, c, col: index };
+        state.reveal = true;
+
+        if (d.type === "item-field") bindItemField(block, d.entry);
+        else bindField(d.src, d.entry, { block, col: index });
+    });
+
+    return zone;
+}
+
+function columnFieldFits(block, d) {
+    return Boolean(block.path) && d.src === block.src && d.entry.path.startsWith(`${block.path}.0.`);
 }
 
 function previewColumn(column, item) {
@@ -971,7 +1029,7 @@ function getPath(source, path) {
 }
 
 function previewValue(value, item) {
-    if (!value.path) return { text: "[ pick a field ]", raw: null };
+    if (!value.path) return { text: PICK_FIELD, raw: null };
 
     const source = value.scope === "item" ? item : sourceJSON(value.src);
     let raw = getPath(source, value.path);
@@ -1604,6 +1662,7 @@ function formatExpression(value, base, isFloat) {
         case "percent":
             return `printf "%.${value.digits}f%%" ${base}`;
         case "percent-change":
+            if (!value.against) return `printf "%.${value.digits}f%%" ${base}`;
             return `printf "%.${value.digits}f%%" (percentChange ${base} (${accessor(value, value.against, "Float")}))`;
         case "date":
             return `formatTime "${value.layout}" (parseTime "${value.parse}" ${base})`;
@@ -1629,6 +1688,8 @@ function conditionExpr(value, condition) {
 
 // Returns a value as its class name, the lines to emit before it, and the printed expression.
 function valueParts(value) {
+    if (!value.path) return { before: [], className: "color-subdue", output: `"${PICK_FIELD}"` };
+
     const base = baseExpression(value);
     const isFloat = methodFor(value) === "Float";
 
@@ -1660,7 +1721,7 @@ function statMarkup(block, indent) {
     const label = (block.label || "").trim();
     const icon = (block.icon || "").trim();
     const labelLine = label ? [`${indent}  <div class="size-h6 uppercase color-subdue">${escapeText(label)}</div>`] : [];
-    const parts = block.value.format === "relative" ? null : valueParts(block.value);
+    const parts = block.value.format === "relative" && block.value.path ? null : valueParts(block.value);
 
     const valueLine = parts
         ? `${indent}  <div class="size-h3 ${parts.className}">{{ ${parts.output} }}</div>`
@@ -1735,7 +1796,7 @@ function columnMarkup(column, indent, align) {
 
     const withIcon = (inner) => (column.iconSide === "right" ? inner + iconTag(icon) : iconTag(icon) + inner);
 
-    if (column.format === "relative") {
+    if (column.format === "relative" && column.path) {
         const attrs = `{{ toRelativeTime (parseTime "${column.parse}" (${accessor(column, column.path, "String")})) }}`;
         const line = icon
             ? `${indent}<div class="${wrap}">${withIcon(`<span class="${overflowClass(column)} ${column.color}" ${attrs}></span>`)}</div>`
@@ -1753,6 +1814,8 @@ function columnMarkup(column, indent, align) {
 }
 
 function listMarkup(block, indent) {
+    if (!block.path) return [`${indent}<div class="size-h4 color-subdue">${escapeText(PICK_FIELD)}</div>`];
+
     const limit = block.limit || 5;
     const labels = block.columns.filter((column) => (column.label || "").trim());
     const lines = [];
