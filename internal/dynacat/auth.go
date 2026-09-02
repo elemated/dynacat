@@ -169,7 +169,7 @@ func (a *application) handleAuthenticationAttempt(w http.ResponseWriter, r *http
 	}
 
 	logAuthFailure := func() {
-		slog.Warn("Failed login attempt", "username", creds.Username, "ip", ip)
+		slog.Warn("Failed login attempt", "username", strconv.Quote(creds.Username), "ip", ip)
 	}
 
 	if len(creds.Username) == 0 || len(creds.Password) == 0 {
@@ -210,9 +210,7 @@ func (a *application) handleAuthenticationAttempt(w http.ResponseWriter, r *http
 
 	a.setAuthSessionCookie(w, r, token, time.Now().Add(AUTH_TOKEN_VALID_PERIOD))
 
-	a.authAttemptsMu.Lock()
-	delete(a.failedAuthAttempts, ip)
-	a.authAttemptsMu.Unlock()
+	a.clearAuthRateLimit(ip)
 
 	redirect := a.takeLoginRedirect(w, r)
 	w.Header().Set("Content-Type", "application/json")
@@ -246,6 +244,13 @@ func (a *application) checkAuthRateLimit(ip string) (bool, int) {
 	}
 
 	return false, 0
+}
+
+// Drops the IP's counter after a successful login so valid callers are never throttled.
+func (a *application) clearAuthRateLimit(ip string) {
+	a.authAttemptsMu.Lock()
+	delete(a.failedAuthAttempts, ip)
+	a.authAttemptsMu.Unlock()
 }
 
 // Verifies a username/password pair against the configured users. Password users have no
@@ -365,25 +370,11 @@ func (a *application) canUserAccessPage(user *authenticatedUser, p *page) bool {
 func (a *application) handleAccessControl(w http.ResponseWriter, r *http.Request, p *page, fallback doWhenUnauthorized) bool {
 	user := a.getAuthenticatedUser(w, r)
 
-	pageHasRestrictions := len(p.AllowedUsers) > 0 || len(p.AllowedGroups) > 0
-	allowed := a.canUserAccessPage(user, p)
-
-	if allowed {
+	if a.canUserAccessPage(user, p) {
 		return false
 	}
 
-	if user == nil {
-		switch fallback {
-		case redirectToLogin:
-			a.redirectToLoginPage(w, r)
-		case showUnauthorizedJSON:
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error": "Unauthorized"}`))
-		}
-		return true
-	}
-
-	if pageHasRestrictions {
+	if user != nil {
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte("Forbidden"))
 		return true
@@ -396,8 +387,8 @@ func (a *application) handleAccessControl(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error": "Unauthorized"}`))
 	}
-	return true
 
+	return true
 }
 
 func (a *application) handleUnauthorizedResponse(w http.ResponseWriter, r *http.Request, fallback doWhenUnauthorized) bool {

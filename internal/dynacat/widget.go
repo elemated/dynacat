@@ -145,6 +145,7 @@ type widget interface {
 	GetAPIID() string
 	GetTitle() string
 	GetError() error
+	IsLazyLoad() bool
 
 	initialize() error
 	requiresUpdate(*time.Time) bool

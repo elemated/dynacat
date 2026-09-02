@@ -148,7 +148,7 @@ func (c *imageCache) downloadAndCacheWithClient(ctx context.Context, rawURL stri
 		ext = extensionFromContentType(resp.Header.Get("Content-Type"))
 	}
 	if ext == "" {
-		ext = ".img"
+		return "", fmt.Errorf("unsupported content type %q for %s", resp.Header.Get("Content-Type"), rawURL)
 	}
 
 	tmpPath := filepath.Join(c.dir, hashHex+".tmp")

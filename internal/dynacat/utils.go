@@ -298,8 +298,6 @@ func ternary[T any](condition bool, a, b T) T {
 	return b
 }
 
-func ItsUsedTrustMeBro(...any) {}
-
 func hslToHex(h, s, l float64) string {
 	s /= 100.0
 	l /= 100.0
@@ -344,13 +342,6 @@ func hslToHex(h, s, l float64) string {
 		b = hueToRgb(p, q, h-1.0/3.0)
 	}
 
-	ir := int(math.Round(r * 255.0))
-	ig := int(math.Round(g * 255.0))
-	ib := int(math.Round(b * 255.0))
-
-	ir = int(math.Max(0, math.Min(255, float64(ir))))
-	ig = int(math.Max(0, math.Min(255, float64(ig))))
-	ib = int(math.Max(0, math.Min(255, float64(ib))))
-
-	return fmt.Sprintf("#%02x%02x%02x", ir, ig, ib)
+	return fmt.Sprintf("#%02x%02x%02x",
+		int(math.Round(r*255.0)), int(math.Round(g*255.0)), int(math.Round(b*255.0)))
 }

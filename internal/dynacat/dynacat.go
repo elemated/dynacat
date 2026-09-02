@@ -73,6 +73,7 @@ type application struct {
 	sseClients           map[*sseClient]struct{}
 	DynamicUpdateEnabled bool
 	EditorEnabled        bool
+	editorMu             sync.Mutex
 
 	apiRateMu       sync.Mutex
 	apiRateRequests map[string]*apiRateWindow
@@ -378,6 +379,7 @@ func newApplication(c *config) (*application, error) {
 	}
 
 	app.warnAboutAPIExposure()
+	app.warnAboutEditorExposure()
 
 	config.Theme.CustomCSSFile = app.resolveUserDefinedAssetPath(config.Theme.CustomCSSFile)
 	config.Branding.LogoURL = app.resolveUserDefinedAssetPath(config.Branding.LogoURL)
@@ -882,10 +884,8 @@ func (a *application) handleTodoSave(w http.ResponseWriter, r *http.Request) {
 
 func (a *application) securityHeadersMiddleware(next http.Handler) http.Handler {
 	frameAncestors := "'self'"
-	xFrameOptions := "SAMEORIGIN"
 	if len(a.Config.Server.AllowedEmbedHosts) > 0 {
 		frameAncestors = "'self' " + strings.Join(a.Config.Server.AllowedEmbedHosts, " ")
-		xFrameOptions = "ALLOW-FROM " + strings.Join(a.Config.Server.AllowedEmbedHosts, " ")
 	}
 	csp := "default-src 'self'; " +
 		"img-src 'self' data: blob: https: http:; " +
@@ -902,7 +902,10 @@ func (a *application) securityHeadersMiddleware(next http.Handler) http.Handler 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", xFrameOptions)
+		// Only the default case is expressible in this header, embed hosts are covered by frame-ancestors.
+		if len(a.Config.Server.AllowedEmbedHosts) == 0 {
+			h.Set("X-Frame-Options", "SAMEORIGIN")
+		}
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Content-Security-Policy", csp)
 		if a.Config.Server.HTTPS || a.isRequestHTTPS(r) {

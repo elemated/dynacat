@@ -33,7 +33,7 @@ func (a *application) getImageProxyInfo(hash string) (imageProxyInfo, bool) {
 	return info, ok
 }
 
-func validateImageProxyURL(rawURL string) error {
+func validatePublicFetchURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return err
@@ -88,7 +88,7 @@ func (a *application) handleImageProxyRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := validateImageProxyURL(info.URL); err != nil {
+	if err := validatePublicFetchURL(info.URL); err != nil {
 		http.Error(w, "Forbidden URL", http.StatusForbidden)
 		return
 	}
@@ -214,7 +214,7 @@ func (a *application) handleSearchAutocompleteRequest(w http.ResponseWriter, r *
 		// Self-hosted instances named in the config are allowed to sit on a private
 		// address, unlike URLs that could otherwise be probed through this endpoint.
 		if !source.AllowPrivate {
-			if err := validateImageProxyURL(customURL); err != nil {
+			if err := validatePublicFetchURL(customURL); err != nil {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("[]"))
 				return

@@ -177,6 +177,8 @@ func (widget *searchWidget) collectBookmarks(app *application, pageFilter *page)
 		return
 	}
 
+	ownPage := app.widgetToPage[widget.GetID()]
+
 	var matches []searchBookmarkMatch
 	seen := make(map[string]bool)
 	for id, w := range app.widgetByID {
@@ -185,7 +187,12 @@ func (widget *searchWidget) collectBookmarks(app *application, pageFilter *page)
 			continue
 		}
 
-		if pageFilter != nil && app.widgetToPage[id] != pageFilter {
+		source := app.widgetToPage[id]
+		if pageFilter != nil && source != pageFilter {
+			continue
+		}
+
+		if source != ownPage && source != nil && (len(source.AllowedUsers) > 0 || len(source.AllowedGroups) > 0) {
 			continue
 		}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -35,13 +36,7 @@ type sharedFetcher struct {
 
 var globalSharedFetcher = &sharedFetcher{entries: make(map[string]*sharedFetchEntry)}
 
-var sharedFetchRelevantHeaders = []string{
-	"Authorization",
-	"Accept",
-	"Content-Type",
-	"If-None-Match",
-	"If-Modified-Since",
-}
+var sharedFetchIgnoredHeaders = []string{"User-Agent"}
 
 func sharedFetchKey(client requestDoer, req *http.Request) string {
 	var b strings.Builder
@@ -52,9 +47,19 @@ func sharedFetchKey(client requestDoer, req *http.Request) string {
 	b.WriteByte(0)
 	b.WriteString(fmt.Sprintf("%p", client))
 
-	for _, h := range sharedFetchRelevantHeaders {
+	names := make([]string, 0, len(req.Header))
+	for name := range req.Header {
+		if !slices.Contains(sharedFetchIgnoredHeaders, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+
+	for _, name := range names {
 		b.WriteByte(0)
-		b.WriteString(req.Header.Get(h))
+		b.WriteString(name)
+		b.WriteByte(0)
+		b.WriteString(strings.Join(req.Header.Values(name), ","))
 	}
 
 	return hashString(b.String())

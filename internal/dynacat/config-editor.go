@@ -57,6 +57,16 @@ func warnAboutIgnoredEditorConfig(c *config) {
 	})
 }
 
+var editorWarnedAboutExposure bool
+
+func (a *application) warnAboutEditorExposure() {
+	warnOnce(
+		a.EditorEnabled && a.Config.Server.AllowEditing && !a.RequiresAuth,
+		&editorWarnedAboutExposure,
+		"The web UI editor is enabled without authentication. Anyone who can reach this server can rewrite your config. Set server.allow-editing to false or configure auth.",
+	)
+}
+
 type editorConfigView struct {
 	Pages        []editorPageView   `json:"pages"`
 	Theme        map[string]string  `json:"theme"`
@@ -349,6 +359,9 @@ func widgetNodeToView(w *yaml.Node) editorWidgetView {
 }
 
 func (a *application) applyEditorMutation(user *authenticatedUser, m editorMutation) error {
+	a.editorMu.Lock()
+	defer a.editorMu.Unlock()
+
 	switch m.Op {
 	case "addPage", "editStyling", "deleteThemePreset":
 		// Not scoped to an existing page, so a user restricted to specific pages
@@ -714,7 +727,11 @@ func (a *application) writeConfigCandidate(path string, candidate []byte) error 
 		perm = info.Mode()
 	}
 
-	original, _ := os.ReadFile(path)
+	// Without the original there is nothing to roll back to, so refuse rather than risk truncating.
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
 
 	if err := os.WriteFile(path, candidate, perm); err != nil {
 		if isWriteBlockedError(err) {

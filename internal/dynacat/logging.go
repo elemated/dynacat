@@ -115,7 +115,7 @@ func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 		b.WriteString(key)
 		b.WriteString("=")
 		b.WriteString(ansiReset)
-		b.WriteString(a.Value.String())
+		b.WriteString(redactSecretQueryParams(a.Value.String()))
 	}
 
 	for _, a := range h.attrs {

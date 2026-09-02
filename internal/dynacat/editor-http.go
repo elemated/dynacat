@@ -245,24 +245,11 @@ func (a *application) handleEditorCustomAPIPreview(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, response)
 }
 
-// Expands ${VAR} references the same way a saved config would before fetching.
+// ${VAR} references are deliberately left unexpanded: the preview body is caller-controlled, so
+// expanding them would hand any editor user the process environment.
 func fetchEditorPreviewRequest(req *CustomAPIRequest) (*customAPIResponseData, error) {
 	if req == nil {
 		return nil, errors.New("missing request")
-	}
-
-	expanded, err := parseConfigVariables([]byte(req.URL))
-	if err != nil {
-		return nil, err
-	}
-	req.URL = string(expanded)
-
-	for key, value := range req.Headers {
-		expandedValue, err := parseConfigVariables([]byte(value))
-		if err != nil {
-			return nil, err
-		}
-		req.Headers[key] = string(expandedValue)
 	}
 
 	if err := req.initialize(); err != nil {

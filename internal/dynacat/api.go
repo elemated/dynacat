@@ -186,10 +186,11 @@ func (a *application) apiAuthenticate(w http.ResponseWriter, r *http.Request) (*
 		}
 
 		if user := a.verifyUserPassword(username, password); user != nil {
+			a.clearAuthRateLimit(ip)
 			return user, false
 		}
 
-		slog.Warn("Failed API login attempt", "username", username, "ip", ip)
+		slog.Warn("Failed API login attempt", "username", strconv.Quote(username), "ip", ip)
 		writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
 		return nil, true
 	}
@@ -247,7 +248,10 @@ func (a *application) handleAPIPages(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// Widget titles and errors are written by background updates that hold this lock.
+		p.mu.Lock()
 		views = append(views, apiPageView{Slug: p.Slug, Name: p.Title, Widgets: apiPageWidgetViews(p, false)})
+		p.mu.Unlock()
 	}
 
 	writeJSON(w, http.StatusOK, views)
@@ -328,7 +332,7 @@ func (a *application) handleAPIWidget(w http.ResponseWriter, r *http.Request) {
 		// widget inside the shared fetch window, so widgets pointing at the same upstream
 		// still share a single request.
 		now := time.Now()
-		if widget.requiresUpdate(&now) {
+		if widget.requiresUpdate(&now) || widget.IsLazyLoad() {
 			widget.update(withSharedFetchMaxAge(context.Background(), widget.getCacheDuration()))
 		}
 
