@@ -18,10 +18,9 @@
 - Fixed a few security issues
 - Fixed trash icon disappearing while dragging a `todo` item on mobile
 - Fixed `todo` checkbox sitting too close to widget edge on mobile
-- Added hints to non-obvious fields (e.g. `server` in `speedtest`, service URL prefixes in `calendar`/`playing`/`latest-media`) in the visual editor
-- Fixed being unable to enter the visual editor after a server restart, when the page's cache was still building on first load
 - Fixed a lot of smaller ui issues (I lost count at some point tbh)
 - Added [degoog](https://github.com/degoog-org/degoog) theme and engine 
+- Fixed Reddit widget and Reddit RSS feeds returning `403` again after Reddit renamed the JS challenge token field
 
 # Changes for 2.4.0
 - Added Brave Search as an autocompletion engine and normal one

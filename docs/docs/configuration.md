@@ -202,6 +202,7 @@ server:
 | host | string | no |  |
 | port | number | no | 8080 |
 | proxied | boolean | no | false |
+| trusted-proxies | array of strings | no | |
 | base-url | string | no | |
 | assets-path | string | no | /app/assets |
 | cache-dir | string | no | .cache |
@@ -219,6 +220,21 @@ A number between 1 and 65,535, so long as that port isn't already used by anythi
 
 #### `proxied`
 Set to `true` if you're using a reverse proxy in front of Dynacat. This will make Dynacat use the `X-Forwarded-*` headers to determine the original request details.
+
+#### `trusted-proxies`
+A list of IPs and/or CIDR ranges (e.g. `10.0.0.1` or `10.0.0.0/24`) allowed to set the `X-Forwarded-*` headers when `proxied` is `true`. A bare IP is treated as a `/32` (or `/128` for IPv6).
+
+If left empty, `X-Forwarded-*` headers are ignored entirely and the direct connection's address is used instead, even with `proxied: true`. This is the safe default: it avoids trusting forwarded headers from an unknown source, but it also means client IPs/protocol will show as your proxy's, not the real visitor's, until you list the proxy here.
+
+Example:
+
+```yaml
+server:
+  proxied: true
+  trusted-proxies:
+    - 10.0.0.0/24
+    - 192.168.1.1
+```
 
 #### `base-url`
 The base URL that Dynacat is hosted under. No need to specify this unless you're using a reverse proxy and are hosting Dynacat under a directory. If that's the case then you can set this value to `/dynacat` or whatever the directory is called. Note that the forward slash (`/`) in the beginning is required unless you specify the full domain and path.
@@ -2822,6 +2838,8 @@ When running in a container the reported platform is the one of the image (usual
 volumes:
   - /etc/os-release:/host/etc/os-release:ro
 ```
+
+Alternatively, set [`HOST_ETC`](docker-options.md#host_etc) if you'd rather bind mount the host's whole `/etc` to a custom path.
 
 #### Properties
 | Name | Type | Required | Default |

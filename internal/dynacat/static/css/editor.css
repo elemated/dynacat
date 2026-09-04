@@ -109,7 +109,7 @@
 .editor-palette-icon {
     width: 22px;
     height: 22px;
-    background: var(--color-text-subdue);
+    background: var(--color-text-highlight);
     mask: var(--icon-url) center / contain no-repeat;
     -webkit-mask: var(--icon-url) center / contain no-repeat;
 }
@@ -119,7 +119,7 @@
     font-size: 1.05rem;
     line-height: 1.2;
     text-align: center;
-    color: var(--color-text-subdue);
+    color: var(--color-text-highlight);
     overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -129,6 +129,11 @@
 
 body.editing {
     padding-bottom: 132px;
+}
+
+/* The username crowds the header enough to squeeze out the editor toggle. */
+body.editing .nav-username {
+    display: none;
 }
 
 body.editing .widget + .widget {
@@ -234,14 +239,14 @@ body.editing .page-column:not(:has(> .widget))::after {
     flex-shrink: 0;
     width: 22px;
     height: 22px;
-    background: var(--color-text-subdue);
+    background: var(--color-text-highlight);
     mask: var(--icon-url) center / contain no-repeat;
     -webkit-mask: var(--icon-url) center / contain no-repeat;
 }
 
 .editor-widget-title {
     font-size: 1.3rem;
-    color: var(--color-text-base);
+    color: var(--color-text-highlight);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -282,12 +287,6 @@ body.editing .page-column:not(:has(> .widget))::after {
     display: flex;
     justify-content: center;
     padding-top: 8px;
-    opacity: 0.6;
-    transition: opacity 0.15s;
-}
-
-.editor-column-tools:hover {
-    opacity: 1;
 }
 
 .editor-column-remove {
@@ -302,6 +301,7 @@ body.editing .page-column:not(:has(> .widget))::after {
     font: inherit;
     font-size: 1.1rem;
     cursor: pointer;
+    transition: color 0.15s;
 }
 
 .editor-column-remove:hover {
@@ -468,12 +468,60 @@ body.editing .editor-styling-trigger {
 
 .editor-theme-picker {
     display: flex;
+    align-items: center;
     justify-content: center;
+    gap: 1.8rem;
     padding-block: 0.4rem 0.2rem;
 }
 
 .editor-theme-picker .theme-choices {
     justify-content: center;
+}
+
+.editor-theme-badge {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    padding: 0;
+    border: none;
+    border-radius: 0.3rem;
+    background: var(--color-widget-background-highlight);
+    color: var(--color-text-subdue);
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.editor-theme-badge::before {
+    content: '';
+    position: absolute;
+    inset: -.4rem;
+    border-radius: .7rem;
+    border: 2px solid transparent;
+    transition: border-color .3s;
+}
+
+.editor-theme-badge:hover {
+    color: var(--color-text-base);
+}
+
+.editor-theme-badge:hover::before {
+    border-color: var(--color-text-subdue);
+}
+
+.editor-theme-badge.current {
+    color: var(--color-text-highlight);
+}
+
+.editor-theme-badge.current::before {
+    border-color: var(--color-text-base);
+}
+
+.editor-theme-badge svg {
+    width: 17px;
+    height: 17px;
 }
 
 .editor-modal-body {
@@ -718,6 +766,7 @@ body.editing .editor-styling-trigger {
 }
 
 /* Author `display` beats the UA `[hidden]` rule, so hiding these needs an explicit override. */
+.editor-btn[hidden],
 .editor-list[hidden],
 .editor-list-add[hidden] {
     display: none;

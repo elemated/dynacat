@@ -90,6 +90,19 @@ environment:
 >
 > This only affects pages created after the change. Existing pages, whether inline or included, keep their current location.
 
+### HOST_ETC
+
+Points the `server-stats` widget at a bind-mounted copy of the host's `/etc` directory so it reports the host's OS instead of the container image's (usually `alpine`). Dynacat reads `$HOST_ETC/os-release`.
+
+This is an alternative to mounting the file directly to `/host/etc/os-release` (see [Server Stats](configuration.md#server-stats)) - useful if you'd rather bind mount the whole host `/etc` to a path of your choosing:
+
+```yaml
+environment:
+  - HOST_ETC=/host-etc
+volumes:
+  - /etc:/host-etc:ro
+```
+
 ## Dynamic Refreshing
 
 Dynamic refreshing allows widgets to automatically update their data at specified intervals. This behavior can be controlled through two mechanisms:

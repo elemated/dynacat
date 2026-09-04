@@ -1346,6 +1346,7 @@ function openStylingModal() {
     const branding = (state.config && state.config.branding) || {};
     const presets = (state.config && state.config.themePresets) || [];
     let selectedKey = "";
+    let page = "theme";
     let controls = [];
 
     const overlay = div("editor-ui editor-modal-overlay");
@@ -1360,6 +1361,7 @@ function openStylingModal() {
         btn.title = entry.key === "" ? "Default" : entry.key;
         btn.addEventListener("click", () => {
             selectedKey = entry.key;
+            page = "theme";
             highlightCurrent();
             renderBody(selectedKey);
             syncActions();
@@ -1367,10 +1369,22 @@ function openStylingModal() {
         swatchButtons.push({ key: entry.key, btn });
         choices.append(btn);
     }
+
+    const badgeBtn = button("", "editor-theme-badge");
+    badgeBtn.innerHTML = iconMedal;
+    badgeBtn.title = "Branding";
+    badgeBtn.addEventListener("click", () => {
+        page = "branding";
+        highlightCurrent();
+        renderBrandingBody();
+        syncActions();
+    });
+
     const highlightCurrent = () => {
-        for (const s of swatchButtons) s.btn.classList.toggle("current", s.key === selectedKey);
+        for (const s of swatchButtons) s.btn.classList.toggle("current", page === "theme" && s.key === selectedKey);
+        badgeBtn.classList.toggle("current", page === "branding");
     };
-    picker.append(choices);
+    picker.append(choices, badgeBtn);
     modal.append(picker);
 
     const bodyEl = div("editor-modal-body");
@@ -1411,8 +1425,16 @@ function openStylingModal() {
         options.append(reg("theme", "text-saturation-multiplier", numField("Text saturation multiplier", theme["text-saturation-multiplier"], "e.g. 1")));
 
         bodyEl.append(sectionTitle("Colors"), colors, sectionTitle("Theme options"), options);
+    }
 
-        if (!isDefault) return;
+    function renderBrandingBody() {
+        bodyEl.innerHTML = "";
+        controls = [];
+
+        const reg = (section, k, ctl) => {
+            controls.push({ section, key: k, read: ctl.read });
+            return ctl.wrapper;
+        };
 
         const logo = div("editor-fields");
         const logoURL = textField("Logo URL (overwrites logo)", branding["logo-url"], "/assets/logo.png");
@@ -1448,13 +1470,19 @@ function openStylingModal() {
         misc.append(reg("branding", "show-desktop-navigation-on-hover", checkField("Show desktop navigation on hover", branding["show-desktop-navigation-on-hover"])));
         misc.append(reg("branding", "center-desktop-navigation", checkField("Center desktop navigation", branding["center-desktop-navigation"])));
 
-        bodyEl.append(collapsible("Logo & branding", logo), collapsible("App / PWA", app), collapsible("Footer & navigation", misc));
+        bodyEl.append(
+            sectionTitle("Logo & branding"), logo,
+            sectionTitle("App / PWA"), app,
+            sectionTitle("Footer & navigation"), misc,
+        );
     }
 
     const collect = () => {
-        const themeOut = {};
-        const brandingOut = {};
-        for (const c of controls) (c.section === "theme" ? themeOut : brandingOut)[c.key] = c.read();
+        let themeOut, brandingOut;
+        for (const c of controls) {
+            if (c.section === "theme") (themeOut ??= {})[c.key] = c.read();
+            else (brandingOut ??= {})[c.key] = c.read();
+        }
         return { themeOut, brandingOut };
     };
 
@@ -1472,7 +1500,12 @@ function openStylingModal() {
         const { themeOut, brandingOut } = collect();
         saveBtn.disabled = true;
         try {
-            const ok = selectedKey === "" ? await saveStyling(themeOut, brandingOut) : await savePreset(selectedKey, themeOut);
+            const ok =
+                page === "branding"
+                    ? await saveStyling(undefined, brandingOut || {})
+                    : selectedKey === ""
+                      ? await saveStyling(themeOut, brandingOut)
+                      : await savePreset(selectedKey, themeOut);
             if (ok) overlay.remove();
         } finally {
             saveBtn.disabled = false;
@@ -1499,7 +1532,12 @@ function openStylingModal() {
         });
     });
 
-    const syncActions = () => {};
+    // Delete and "save as new" act on themes, so they have no meaning on the branding page.
+    const syncActions = () => {
+        const brandingPage = page === "branding";
+        deleteBtn.hidden = brandingPage;
+        saveAsNew.hidden = brandingPage;
+    };
 
     actions.append(deleteBtn, cancel, saveAsNew, saveBtn);
     modal.append(actions);
@@ -1999,3 +2037,4 @@ const iconGrip = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy
 const iconChevron = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>`;
 const iconPaste = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"/></svg>`;
 const iconTrash = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>`;
+const iconMedal = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4V4L9.81 8.36C6.14 9.57 4.14 13.53 5.35 17.2C6.56 20.87 10.5 22.87 14.19 21.66C17.86 20.45 19.86 16.5 18.65 12.82C17.95 10.71 16.3 9.05 14.19 8.36L20 4V2M14.94 19.5L12 17.78L9.06 19.5L9.84 16.17L7.25 13.94L10.66 13.64L12 10.5L13.34 13.63L16.75 13.93L14.16 16.16L14.94 19.5Z"/></svg>`;

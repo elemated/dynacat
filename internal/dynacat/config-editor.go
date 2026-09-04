@@ -222,6 +222,7 @@ func (a *application) buildEditorConfigView(user *authenticatedUser) (editorConf
 	}
 
 	view := editorConfigView{}
+	docs := newEditorDocs()
 	for i := range pagesNode.Content {
 		// Positions have to line up with the page indices mutations are addressed by, so a
 		// page the user cannot see is emitted as an empty slot rather than skipped.
@@ -234,7 +235,7 @@ func (a *application) buildEditorConfigView(user *authenticatedUser) (editorConf
 		if err != nil {
 			return editorConfigView{}, err
 		}
-		pv := pageNodeToView(pageNode, path)
+		pv := pageNodeToView(pageNode, path, docs)
 		if i < len(a.Config.Pages) {
 			pv.Slug = a.Config.Pages[i].Slug
 			pv.Title = a.Config.Pages[i].Title
@@ -291,7 +292,7 @@ func presetsToViews(root *yaml.Node) []editorPresetView {
 	return out
 }
 
-func pageNodeToView(pageNode *yaml.Node, path string) editorPageView {
+func pageNodeToView(pageNode *yaml.Node, path string, docs *editorDocs) editorPageView {
 	pv := editorPageView{
 		Title:    scalarValue(getMappingValue(pageNode, "name")),
 		Slug:     scalarValue(getMappingValue(pageNode, "slug")),
@@ -315,8 +316,8 @@ func pageNodeToView(pageNode *yaml.Node, path string) editorPageView {
 	for _, col := range columns.Content {
 		cv := editorColumnView{Size: scalarValue(getMappingValue(col, "size"))}
 		if widgets := getMappingValue(col, "widgets"); widgets != nil {
-			for _, w := range widgets.Content {
-				cv.Widgets = append(cv.Widgets, widgetNodeToView(w))
+			for _, slot := range expandWidgetSlots(widgets, path, docs, 0) {
+				cv.Widgets = append(cv.Widgets, widgetNodeToView(slot.node, slot.ownerPath, docs))
 			}
 		}
 		pv.Columns = append(pv.Columns, cv)
@@ -325,7 +326,7 @@ func pageNodeToView(pageNode *yaml.Node, path string) editorPageView {
 	return pv
 }
 
-func widgetNodeToView(w *yaml.Node) editorWidgetView {
+func widgetNodeToView(w *yaml.Node, ownerPath string, docs *editorDocs) editorWidgetView {
 	wv := editorWidgetView{Values: map[string]string{}}
 	for i := 0; i+1 < len(w.Content); i += 2 {
 		key, val := w.Content[i].Value, w.Content[i+1]
@@ -334,8 +335,8 @@ func widgetNodeToView(w *yaml.Node) editorWidgetView {
 			wv.Type = val.Value
 		case "widgets":
 			if val.Kind == yaml.SequenceNode {
-				for _, child := range val.Content {
-					wv.Widgets = append(wv.Widgets, widgetNodeToView(child))
+				for _, slot := range expandWidgetSlots(val, ownerPath, docs, 0) {
+					wv.Widgets = append(wv.Widgets, widgetNodeToView(slot.node, slot.ownerPath, docs))
 				}
 			}
 		case "title":
@@ -451,13 +452,17 @@ func (a *application) applyEditorMutation(user *authenticatedUser, m editorMutat
 		return fmt.Errorf("page %d has no columns", m.Page)
 	}
 
-	if err := mutateColumns(columns, m); err != nil {
+	docs := newEditorDocs()
+	docs.track(path, doc)
+	docs.pagePath = filepath.Clean(path)
+
+	if err := mutateColumns(columns, m, docs); err != nil {
 		return err
 	}
 
 	setBlockStyleDeep(pageNode)
 
-	return a.writeConfigCandidate(path, marshalDocument(doc))
+	return a.writeEditorDocs(docs)
 }
 
 func setBlockStyleDeep(n *yaml.Node) {
@@ -472,7 +477,7 @@ func setBlockStyleDeep(n *yaml.Node) {
 	}
 }
 
-func mutateColumns(columns *yaml.Node, m editorMutation) error {
+func mutateColumns(columns *yaml.Node, m editorMutation, docs *editorDocs) error {
 	switch m.Op {
 	case "addColumn":
 		col := newMappingNode()
@@ -488,10 +493,13 @@ func mutateColumns(columns *yaml.Node, m editorMutation) error {
 		return nil
 	}
 
-	widgets, index, err := resolveWidgets(columns, m.Path)
+	widgets, owner, err := resolveWidgets(columns, m.Path, docs)
 	if err != nil {
 		return err
 	}
+
+	index := m.Path[len(m.Path)-1]
+	slots := expandWidgetSlots(widgets, owner, docs, 0)
 
 	switch m.Op {
 	case "addWidget":
@@ -499,66 +507,88 @@ func mutateColumns(columns *yaml.Node, m editorMutation) error {
 		if err != nil {
 			return err
 		}
-		widgets.Content = insertNode(widgets.Content, index, node)
+		seq, at := widgetInsertPoint(slots, widgets, index)
+		seq.Content = insertNode(seq.Content, at, node)
 	case "editWidget":
-		if !validIndex(widgets.Content, index) {
+		if !validSlotIndex(slots, index) {
 			return fmt.Errorf("widget index out of range")
 		}
-		if err := editWidgetNode(widgets.Content[index], m.Fields, m.RawFields); err != nil {
+		if err := editWidgetNode(slots[index].node, m.Fields, m.RawFields); err != nil {
 			return err
 		}
 	case "removeWidget":
-		if !validIndex(widgets.Content, index) {
+		if !validSlotIndex(slots, index) {
 			return fmt.Errorf("widget index out of range")
 		}
-		widgets.Content = removeNode(widgets.Content, index)
+		slot := slots[index]
+		slot.seq.Content = removeNode(slot.seq.Content, slot.index)
+		pruneEmptyInclude(slot)
 	case "moveWidget":
 		if isIntPrefix(m.Path, m.ToPath) {
 			return fmt.Errorf("cannot move a container into itself")
 		}
-		if !validIndex(widgets.Content, index) {
+		if !validSlotIndex(slots, index) {
 			return fmt.Errorf("widget index out of range")
 		}
-		node := widgets.Content[index]
-		dstWidgets, dstIndex, err := resolveWidgets(columns, m.ToPath)
+		slot := slots[index]
+		dstWidgets, dstOwner, err := resolveWidgets(columns, m.ToPath, docs)
 		if err != nil {
 			return err
 		}
-		widgets.Content = removeNode(widgets.Content, index)
-		if dstWidgets == widgets && dstIndex > index {
+		dstSlots := expandWidgetSlots(dstWidgets, dstOwner, docs, 0)
+		dstSeq, dstIndex := widgetInsertPoint(dstSlots, dstWidgets, m.ToPath[len(m.ToPath)-1])
+
+		slot.seq.Content = removeNode(slot.seq.Content, slot.index)
+		if dstSeq == slot.seq && dstIndex > slot.index {
 			dstIndex--
 		}
-		dstWidgets.Content = insertNode(dstWidgets.Content, dstIndex, node)
+		dstSeq.Content = insertNode(dstSeq.Content, dstIndex, slot.node)
+		pruneEmptyInclude(slot)
 	default:
 		return fmt.Errorf("unknown op: %s", m.Op)
 	}
 	return nil
 }
 
-func resolveWidgets(columns *yaml.Node, path []int) (*yaml.Node, int, error) {
+func pruneEmptyInclude(slot widgetSlot) {
+	if slot.seq == slot.outerSeq || len(slot.seq.Content) > 0 {
+		return
+	}
+	if validIndex(slot.outerSeq.Content, slot.outerIdx) && includeTarget(slot.outerSeq.Content[slot.outerIdx]) != "" {
+		slot.outerSeq.Content = removeNode(slot.outerSeq.Content, slot.outerIdx)
+	}
+}
+
+func validSlotIndex(slots []widgetSlot, index int) bool {
+	return index >= 0 && index < len(slots)
+}
+
+func resolveWidgets(columns *yaml.Node, path []int, docs *editorDocs) (*yaml.Node, string, error) {
 	if len(path) < 2 {
-		return nil, 0, fmt.Errorf("invalid widget path")
+		return nil, "", fmt.Errorf("invalid widget path")
 	}
 
 	widgets := columnWidgets(columns, path[0])
 	if widgets == nil {
-		return nil, 0, fmt.Errorf("column %d out of range", path[0])
+		return nil, "", fmt.Errorf("column %d out of range", path[0])
 	}
 
+	owner := docs.pagePath
 	for _, wi := range path[1 : len(path)-1] {
-		if !validIndex(widgets.Content, wi) {
-			return nil, 0, fmt.Errorf("widget %d out of range", wi)
+		slots := expandWidgetSlots(widgets, owner, docs, 0)
+		if !validSlotIndex(slots, wi) {
+			return nil, "", fmt.Errorf("widget %d out of range", wi)
 		}
-		container := widgets.Content[wi]
-		inner := getMappingValue(container, "widgets")
+		container := slots[wi]
+		inner := getMappingValue(container.node, "widgets")
 		if inner == nil {
 			inner = sequenceNode()
-			addPair(container, "widgets", inner)
+			addPair(container.node, "widgets", inner)
 		}
-		widgets = inner
+		widgets, owner = inner, container.ownerPath
 	}
 
-	return widgets, path[len(path)-1], nil
+	return widgets, owner, nil
 }
 
 func isIntPrefix(prefix, full []int) bool {
@@ -718,26 +748,51 @@ func uniquePageFileName(dir, title string) string {
 }
 
 func (a *application) writeConfigCandidate(path string, candidate []byte) error {
-	if err := checkIncludesStayInConfigDir(candidate, filepath.Dir(a.configPath)); err != nil {
-		return &editorValidationError{err}
+	return a.writeConfigCandidates(map[string][]byte{path: candidate})
+}
+
+func (a *application) writeConfigCandidates(candidates map[string][]byte) error {
+	if len(candidates) == 0 {
+		return nil
 	}
 
-	perm := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
-		perm = info.Mode()
-	}
+	originals := map[string][]byte{}
+	perms := map[string]os.FileMode{}
 
-	// Without the original there is nothing to roll back to, so refuse rather than risk truncating.
-	original, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(path, candidate, perm); err != nil {
-		if isWriteBlockedError(err) {
-			return &editorPermissionError{path}
+	for path, candidate := range candidates {
+		if err := checkIncludesStayInConfigDir(candidate, filepath.Dir(a.configPath)); err != nil {
+			return &editorValidationError{err}
 		}
-		return err
+
+		perms[path] = os.FileMode(0o644)
+		if info, err := os.Stat(path); err == nil {
+			perms[path] = info.Mode()
+		}
+
+		// Without the original there is nothing to roll back to, so refuse rather than risk truncating.
+		original, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		originals[path] = original
+	}
+
+	var written []string
+	rollback := func() {
+		for _, path := range written {
+			os.WriteFile(path, originals[path], perms[path])
+		}
+	}
+
+	for path, candidate := range candidates {
+		if err := os.WriteFile(path, candidate, perms[path]); err != nil {
+			rollback()
+			if isWriteBlockedError(err) {
+				return &editorPermissionError{path}
+			}
+			return err
+		}
+		written = append(written, path)
 	}
 
 	merged, _, err := parseYAMLIncludes(a.configPath)
@@ -745,11 +800,36 @@ func (a *application) writeConfigCandidate(path string, candidate []byte) error 
 		_, err = newConfigFromYAML(merged)
 	}
 	if err != nil {
-		os.WriteFile(path, original, perm)
+		rollback()
 		return &editorValidationError{err}
 	}
 
 	return nil
+}
+
+func (a *application) writeEditorDocs(docs *editorDocs) error {
+	candidates := map[string][]byte{}
+
+	for path, doc := range docs.docs {
+		root := documentRoot(doc)
+		if root.Kind == 0 {
+			continue
+		}
+		if path != docs.pagePath {
+			setBlockStyleDeep(root)
+		}
+
+		candidate := marshalDocument(doc)
+		if root.Kind == yaml.SequenceNode && len(root.Content) == 0 {
+			candidate = nil
+		}
+		if bytes.Equal(candidate, docs.original[path]) {
+			continue
+		}
+		candidates[path] = candidate
+	}
+
+	return a.writeConfigCandidates(candidates)
 }
 
 // Second line of defence behind rejectIncludeDirective, covering anything the editor writes.
@@ -774,6 +854,114 @@ func checkIncludesStayInConfigDir(candidate []byte, dir string) error {
 	}
 
 	return nil
+}
+
+type editorDocs struct {
+	docs     map[string]*yaml.Node
+	original map[string][]byte
+	pagePath string
+}
+
+func newEditorDocs() *editorDocs {
+	return &editorDocs{docs: map[string]*yaml.Node{}, original: map[string][]byte{}}
+}
+
+func (d *editorDocs) track(path string, doc *yaml.Node) {
+	path = filepath.Clean(path)
+	if _, ok := d.docs[path]; ok {
+		return
+	}
+	d.docs[path] = doc
+	if b, err := os.ReadFile(path); err == nil {
+		d.original[path] = b
+	}
+}
+
+func (d *editorDocs) load(ownerPath, file string) (string, *yaml.Node, error) {
+	path := file
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(filepath.Dir(ownerPath), file)
+	}
+	path = filepath.Clean(path)
+
+	if doc, ok := d.docs[path]; ok {
+		return path, doc, nil
+	}
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return "", nil, err
+	}
+
+	d.docs[path] = &doc
+	d.original[path] = b
+	return path, &doc, nil
+}
+
+type widgetSlot struct {
+	node      *yaml.Node
+	ownerPath string
+	seq       *yaml.Node
+	index     int
+	outerSeq  *yaml.Node
+	outerIdx  int
+}
+
+func expandWidgetSlots(seq *yaml.Node, ownerPath string, docs *editorDocs, depth int) []widgetSlot {
+	var slots []widgetSlot
+	if seq == nil || seq.Kind != yaml.SequenceNode {
+		return slots
+	}
+
+	for i, item := range seq.Content {
+		raw := widgetSlot{node: item, ownerPath: ownerPath, seq: seq, index: i, outerSeq: seq, outerIdx: i}
+
+		include := includeTarget(item)
+		if include == "" || depth >= CONFIG_INCLUDE_RECURSION_DEPTH_LIMIT {
+			slots = append(slots, raw)
+			continue
+		}
+
+		includePath, includeDoc, err := docs.load(ownerPath, include)
+		if err != nil {
+			slots = append(slots, raw)
+			continue
+		}
+		includeRoot := documentRoot(includeDoc)
+		if includeRoot.Kind == 0 || includeRoot.Tag == "!!null" {
+			continue
+		}
+		if includeRoot.Kind != yaml.SequenceNode {
+			slots = append(slots, raw)
+			continue
+		}
+
+		for _, s := range expandWidgetSlots(includeRoot, includePath, docs, depth+1) {
+			if s.seq == includeRoot && s.index == 0 {
+				s.outerSeq, s.outerIdx = seq, i
+			}
+			slots = append(slots, s)
+		}
+	}
+
+	return slots
+}
+
+func widgetInsertPoint(slots []widgetSlot, seq *yaml.Node, index int) (*yaml.Node, int) {
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(slots) {
+		return seq, len(seq.Content)
+	}
+	if s := slots[index]; s.index == 0 {
+		return s.outerSeq, s.outerIdx
+	}
+	return slots[index].seq, slots[index].index
 }
 
 func resolvePageNode(mainDoc *yaml.Node, mainPath string, idx int) (string, *yaml.Node, *yaml.Node, error) {
