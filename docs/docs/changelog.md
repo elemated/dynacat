@@ -3,6 +3,7 @@
 - Added support for `tcp://`/`http://` remote Docker hosts to `sock-path` in the `docker-controller` widget, matching `docker-containers`
 - Documented `id`/`parent` grouping for the `containers` property in `docker-containers` widget -> https://github.com/Panonim/dynacat/issues/134
 - Fixed an issue where subrequests were not detected properly in `dynawidgets`
+- Added automatic update checks for cached `dynawidgets` templates, with a notice on the widget when one changed
 - Fixed `dynawidgets` protocol handling 
 - Added an option to visually edit your configuration
 - Fixed Navidrome in currently playing

@@ -1418,15 +1418,16 @@ The slug of the widget from the dynawidgets repository. This is the only require
 widget: daily-chess-puzzle
 ```
 
+The cached template is update automatically, so you don't have to worry about anything.
+
 ##### `repo`
-The branch/repository to fetch the widget from. This allows you to test widgets from different branches or forks. Defaults to `main`. Example:
+The branch of the dynawidgets repository to fetch the widget from. This allows you to test widgets that are not on `main` yet.
 
 ```yaml
 widget: daily-chess-puzzle
 repo: testing/main
 ```
 
-This will fetch from `https://raw.githubusercontent.com/Panonim/dynawidgets/refs/heads/testing/main/...`
 
 ##### `url`, `headers`, `method`, `body-type`, `body`, `frameless`, `allow-insecure`, `skip-json-validation`
 These properties work the same as in the [custom-api widget](#custom-api). They override the default values defined in the widget's template `required` section.

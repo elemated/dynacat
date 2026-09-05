@@ -237,14 +237,14 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"allow-insecure": {Advanced: true},
 	},
 	"dynawidgets": {
-		"repo":           {Advanced: true, Hint: "Branch/repository to fetch the widget from, defaults to main."},
+		"repo":           {Advanced: true, Options: []string{"main", "testing"}, Hint: "Branch of the dynawidgets repository to fetch the widget from, defaults to main."},
 		"subrequests":    {Advanced: true},
 		"method":         {Advanced: true},
 		"body":           {Advanced: true},
 		"body-type":      {Advanced: true, Options: []string{"json", "string"}},
 		"headers":        {Advanced: true},
 		"allow-insecure": {Advanced: true},
-		"widget":         {Hint: "Slug of the widget from the dynawidgets repository."},
+		"widget":         {Hint: "Widget from the dynawidgets repository."},
 	},
 	"docker-containers": {
 		"sock-path": {Advanced: true, Hint: "Defaults to /var/run/docker.sock; can also be a tcp://host:port or http://host:port address."},

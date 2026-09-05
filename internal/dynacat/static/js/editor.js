@@ -605,9 +605,14 @@ function buildWidgetModal(type, values, structured, onSave) {
             continue;
         }
 
-        const control = field.name === "autocomplete-provider"
-            ? renderAutocompleteProviderField(field, values["autocomplete-provider"], values["autocomplete"])
-            : renderField(field, values[field.name], structured[field.name]);
+        let control;
+        if (field.name === "autocomplete-provider") {
+            control = renderAutocompleteProviderField(field, values["autocomplete-provider"], values["autocomplete"]);
+        } else if (type === "dynawidgets" && field.name === "repo") {
+            control = renderDynawidgetsRepoField(field, values[field.name]);
+        } else {
+            control = renderField(field, values[field.name], structured[field.name]);
+        }
 
         controls.push(control);
         (field.advanced ? advanced : basic).append(control.wrapper);
@@ -1405,6 +1410,31 @@ function renderAutocompleteProviderField(field, value, autocompleteValue) {
             select.value = off ? "" : custom ? "custom" : text || known[0] || "";
             customInput.value = custom ? text : "";
             customInput.style.display = select.value === "custom" ? "" : "none";
+        },
+    };
+}
+
+// The repo is a branch of the dynawidgets repository, so only existing branches are offered.
+function renderDynawidgetsRepoField(field, value) {
+    const options = field.options || [];
+    const defaultRepo = options.includes("main") ? "main" : options[0] || "";
+    const initial = scalarText(value);
+
+    const select = document.createElement("select");
+    select.className = "editor-input";
+    for (const opt of options) select.append(new Option(opt, opt));
+    if (initial && !options.includes(initial)) select.append(new Option(initial, initial));
+    select.value = initial || defaultRepo;
+
+    return {
+        field,
+        wrapper: labeled(field.label, select, field.required, field.hint),
+        // Leaving the default selected keeps the key out of the config.
+        read: () => (!initial && select.value === defaultRepo ? undefined : select.value),
+        write: (v) => {
+            const text = scalarText(v);
+            if (text && ![...select.options].some((o) => o.value === text)) select.append(new Option(text, text));
+            select.value = text || defaultRepo;
         },
     };
 }

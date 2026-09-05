@@ -6,12 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -34,8 +31,13 @@ type dynawidgetsWidget struct {
 	Subrequests       map[string]*CustomAPIRequest `yaml:"subrequests"`
 	Options           customAPIOptions             `yaml:"options"`
 	Frameless         bool                         `yaml:"frameless"`
+	slug              string                       `yaml:"-"`
+	repo              string                       `yaml:"-"`
 	templateContent   string                       `yaml:"-"`
 	compiledTemplate  *template.Template           `yaml:"-"`
+	templateModTime   time.Time                    `yaml:"-"`
+	templateCheckedAt time.Time                    `yaml:"-"`
+	templateUpdatedAt time.Time                    `yaml:"-"`
 	CompiledHTML      template.HTML                `yaml:"-"`
 	APIResponse       json.RawMessage              `yaml:"-"`
 }
@@ -76,7 +78,10 @@ func (widget *dynawidgetsWidget) initialize() error {
 	if err != nil {
 		return fmt.Errorf("resolving dynawidget template: %w", err)
 	}
+	widget.slug = slug
+	widget.repo = repo
 	widget.templateContent = templateContent
+	widget.templateModTime = dynawidgetsTemplateModTime(slug)
 
 	if widget.Title == "" && title != "" {
 		widget.Title = title
@@ -140,6 +145,8 @@ func (widget *dynawidgetsWidget) initialize() error {
 
 func (widget *dynawidgetsWidget) update(ctx context.Context) {
 	widget.Hidden = false
+	widget.refreshTemplate()
+
 	compiledHTML, hidden, rawResponse, err := fetchAndRenderCustomAPIRequest(
 		widget.CustomAPIRequest, widget.Subrequests, widget.Options, widget.compiledTemplate,
 	)
@@ -150,6 +157,56 @@ func (widget *dynawidgetsWidget) update(ctx context.Context) {
 	widget.APIResponse = rawResponse
 	widget.Hidden = hidden
 	widget.CompiledHTML = rewriteImgSrcs(ctx, compiledHTML, widget.Providers)
+	widget.noticeTemplateUpdate()
+}
+
+// Polls for a newer template and recompiles whenever the cache file on disk changed.
+func (widget *dynawidgetsWidget) refreshTemplate() {
+	if widget.slug == "" {
+		return
+	}
+
+	if time.Since(widget.templateCheckedAt) >= dynawidgetsCheckPollInterval {
+		widget.templateCheckedAt = time.Now()
+		if err := dynawidgetsCheckTemplate(widget.slug, widget.repo); err != nil {
+			slog.Warn("Dynawidget template update check failed", "slug", widget.slug, "error", err)
+		}
+	}
+
+	modTime := dynawidgetsTemplateModTime(widget.slug)
+	if modTime.IsZero() || modTime.Equal(widget.templateModTime) {
+		return
+	}
+	widget.templateModTime = modTime
+
+	templateContent, _, _, err := dynawidgetsResolveTemplate(widget.slug, widget.repo)
+	if err != nil {
+		slog.Warn("Could not reload updated dynawidget template", "slug", widget.slug, "error", err)
+		return
+	}
+
+	compiledTemplate, err := template.New("").Funcs(customAPITemplateFuncs(widget.Providers)).Parse(templateContent)
+	if err != nil {
+		slog.Error("Failed to parse updated dynawidget template", "slug", widget.slug, "error", err)
+		return
+	}
+
+	widget.templateContent = templateContent
+	widget.compiledTemplate = compiledTemplate
+	widget.templateUpdatedAt = time.Now()
+	slog.Info("Reloaded updated dynawidget template", "slug", widget.slug, "repo", widget.repo)
+}
+
+// Flags a template that changed under the user for a while after the reload.
+func (widget *dynawidgetsWidget) noticeTemplateUpdate() {
+	if widget.templateUpdatedAt.IsZero() || time.Since(widget.templateUpdatedAt) > dynawidgetsUpdateNoticeDuration {
+		return
+	}
+
+	widget.withNotice(fmt.Errorf(
+		"template updated on %s - reload the page or check the widget still looks right",
+		widget.templateUpdatedAt.Format("2006-01-02 15:04"),
+	))
 }
 
 func (widget *dynawidgetsWidget) setProviders(providers *widgetProviders) {
@@ -248,24 +305,60 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 
 // Returns the template exactly as the repository ships it, without any variable expansion.
 func dynawidgetsRawTemplate(slug string, repo string) (raw string, title string, err error) {
-	if !dynawidgetsSlugPattern.MatchString(slug) {
-		return "", "", fmt.Errorf("invalid slug %q", slug)
+	if repo == "" {
+		repo = dynawidgetsDefaultRepo
 	}
-	templatePath := filepath.Join(dynawidgetsAssetsDir, slug+".txt")
-	if absAssets, aerr := filepath.Abs(dynawidgetsAssetsDir); aerr == nil {
-		if absTemplate, terr := filepath.Abs(templatePath); terr != nil || !strings.HasPrefix(absTemplate, absAssets+string(filepath.Separator)) {
-			return "", "", fmt.Errorf("refusing to resolve template outside assets dir")
-		}
+
+	templatePath, err := dynawidgetsAssetPath(slug, ".txt")
+	if err != nil {
+		return "", "", err
 	}
 
 	if data, readErr := os.ReadFile(templatePath); readErr == nil {
 		slog.Info("Using cached dynawidget template", "slug", slug, "path", templatePath)
-		return string(data), "", nil
+		if meta := dynawidgetsReadMeta(slug); meta != nil {
+			title = meta.Title
+		}
+		return string(data), title, nil
 	}
 
-	firstLetter := string(slug[0])
-	baseURL := fmt.Sprintf("https://raw.githubusercontent.com/Panonim/dynawidgets/refs/heads/%s", repo)
-	listURL := fmt.Sprintf("%s/database/list-%s.json", baseURL, firstLetter)
+	templateURL, title, err := dynawidgetsTemplateURL(slug, repo)
+	if err != nil {
+		return "", "", err
+	}
+
+	slog.Info("Fetching dynawidget template", "slug", slug, "url", templateURL)
+
+	bodyBytes, _, etag, err := dynawidgetsDownloadTemplate(templateURL, "")
+	if err != nil {
+		return "", "", err
+	}
+
+	if err := os.MkdirAll(dynawidgetsAssetsDir, 0755); err != nil {
+		slog.Error("Failed to create dynawidgets assets directory", "error", err)
+	} else if err := os.WriteFile(templatePath, bodyBytes, 0600); err != nil {
+		slog.Error("Failed to cache dynawidget template", "error", err, "path", templatePath)
+	} else {
+		slog.Info("Cached dynawidget template", "slug", slug, "path", templatePath)
+		dynawidgetsWriteMeta(slug, &dynawidgetsTemplateMeta{
+			Repo:      repo,
+			URL:       templateURL,
+			Title:     title,
+			ETag:      etag,
+			CheckedAt: time.Now(),
+		})
+	}
+
+	return string(bodyBytes), title, nil
+}
+
+// Looks the widget up in the repository's per-letter list file.
+func dynawidgetsTemplateURL(slug string, repo string) (templateURL string, title string, err error) {
+	if !dynawidgetsSlugPattern.MatchString(slug) {
+		return "", "", fmt.Errorf("invalid slug %q", slug)
+	}
+
+	listURL := fmt.Sprintf("https://%s/Panonim/dynawidgets/refs/heads/%s/database/list-%s.json", dynawidgetsTemplateHost, repo, slug[:1])
 
 	slog.Info("Fetching dynawidgets list", "url", listURL)
 
@@ -296,53 +389,12 @@ func dynawidgetsRawTemplate(slug string, repo string) (raw string, title string,
 		return "", "", fmt.Errorf("widget %q not found in dynawidgets list", slug)
 	}
 
-	templateURL := entry.Template
+	templateURL = entry.Template
 	if repo != dynawidgetsDefaultRepo {
-		templateURL = strings.Replace(
-			entry.Template,
-			"/refs/heads/"+dynawidgetsDefaultRepo+"/",
-			"/refs/heads/"+repo+"/",
-			1,
-		)
+		templateURL = strings.Replace(templateURL, "/refs/heads/"+dynawidgetsDefaultRepo+"/", "/refs/heads/"+repo+"/", 1)
 	}
 
-	parsedTemplateURL, err := url.Parse(templateURL)
-	if err != nil {
-		return "", "", fmt.Errorf("invalid template URL %q: %w", templateURL, err)
-	}
-	if parsedTemplateURL.Scheme != "https" || parsedTemplateURL.Host != dynawidgetsTemplateHost {
-		return "", "", fmt.Errorf(
-			"refusing to fetch template from unexpected host %q (must be https://%s)",
-			parsedTemplateURL.Host, dynawidgetsTemplateHost,
-		)
-	}
-
-	slog.Info("Fetching dynawidget template", "slug", slug, "url", templateURL)
-
-	templateResp, err := defaultHTTPClient.Get(templateURL)
-	if err != nil {
-		return "", "", fmt.Errorf("fetching template: %w", err)
-	}
-	defer templateResp.Body.Close()
-
-	if templateResp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("fetching template: %d %s", templateResp.StatusCode, http.StatusText(templateResp.StatusCode))
-	}
-
-	bodyBytes, err := io.ReadAll(templateResp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("reading template body: %w", err)
-	}
-
-	if err := os.MkdirAll(dynawidgetsAssetsDir, 0755); err != nil {
-		slog.Error("Failed to create dynawidgets assets directory", "error", err)
-	} else if err := os.WriteFile(templatePath, bodyBytes, 0600); err != nil {
-		slog.Error("Failed to cache dynawidget template", "error", err, "path", templatePath)
-	} else {
-		slog.Info("Cached dynawidget template", "slug", slug, "path", templatePath)
-	}
-
-	return string(bodyBytes), entry.Title, nil
+	return templateURL, entry.Title, nil
 }
 
 type dynawidgetsVariable struct {
