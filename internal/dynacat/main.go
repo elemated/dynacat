@@ -40,6 +40,11 @@ func Main() int {
 			return 1
 		}
 
+		if err := serveFirstRunSetupIfNoConfig(options.configPath); err != nil {
+			fmt.Println(err)
+			return 1
+		}
+
 		if err := serveApp(options.configPath); err != nil {
 			fmt.Println(err)
 			return 1

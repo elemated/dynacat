@@ -128,11 +128,15 @@
 }
 
 body.editing {
-    padding-bottom: 132px;
+    padding-bottom: 170px;
 }
 
 /* The username crowds the header enough to squeeze out the editor toggle. */
 body.editing .nav-username {
+    display: none;
+}
+
+body.editing .footer {
     display: none;
 }
 
