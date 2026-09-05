@@ -736,6 +736,117 @@ body.editing .editor-styling-trigger {
     overflow-x: auto;
 }
 
+.editor-notice {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.editor-env-vars {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+}
+
+.editor-env-var,
+.editor-code-block {
+    background: var(--color-widget-background-highlight);
+    color: var(--color-text-base);
+    font-family: monospace;
+    font-size: 1.2rem;
+}
+
+.editor-env-var {
+    max-width: 100%;
+    padding: 4px 9px;
+    border-radius: calc(var(--border-radius) * 0.75);
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.editor-code-card {
+    position: relative;
+    display: flex;
+}
+
+.editor-code-block {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 12px 44px 12px 14px;
+    border-radius: var(--border-radius);
+    line-height: 1.6;
+    overflow-x: auto;
+}
+
+.editor-code-copy {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    display: flex;
+    padding: 5px;
+    border: none;
+    border-radius: calc(var(--border-radius) * 0.6);
+    background: transparent;
+    color: var(--color-text-subdue);
+    cursor: pointer;
+}
+
+.editor-code-copy:hover {
+    color: var(--color-text-highlight);
+    background: color-mix(in srgb, var(--color-text-subdue) 14%, transparent);
+}
+
+.editor-code-copy svg {
+    width: 1.6rem;
+    height: 1.6rem;
+}
+
+.editor-code-inline {
+    padding: 1px 5px;
+    white-space: nowrap;
+    border-radius: calc(var(--border-radius) * 0.6);
+    background: color-mix(in srgb, var(--color-text-subdue) 16%, transparent);
+    color: var(--color-text-base);
+    font-family: monospace;
+    font-size: 0.95em;
+}
+
+.editor-notice-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: notice-step;
+}
+
+.editor-notice-steps li {
+    position: relative;
+    padding-left: 22px;
+    font-size: 1.25rem;
+    line-height: 1.55;
+    color: var(--color-text-base);
+}
+
+.editor-notice-steps li::before {
+    counter-increment: notice-step;
+    content: counter(notice-step) ".";
+    position: absolute;
+    left: 0;
+    color: var(--color-text-subdue);
+}
+
+.editor-notice-note {
+    padding-left: 11px;
+    border-left: 2px solid var(--color-separator);
+    font-size: 1.15rem;
+    line-height: 1.5;
+    color: var(--color-text-subdue);
+}
+
 .editor-icon-preview {
     width: 26px;
     height: 26px;

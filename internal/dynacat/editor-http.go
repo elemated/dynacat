@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
 const (
@@ -86,6 +87,35 @@ func (a *application) handleEditorConfigSave(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Reports which variables a dynawidget template needs and which of them the container is missing.
+func (a *application) handleEditorDynawidgetVariables(w http.ResponseWriter, r *http.Request) {
+	if a.handleUnauthorizedResponse(w, r, showUnauthorizedJSON) {
+		return
+	}
+	if !a.userCanEditAnything(a.getAuthenticatedUser(w, r)) {
+		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		return
+	}
+
+	slug := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("widget")))
+	repo := strings.TrimSpace(r.URL.Query().Get("repo"))
+	if repo == "" {
+		repo = dynawidgetsDefaultRepo
+	}
+	if !dynawidgetsSlugPattern.MatchString(slug) || !dynawidgetsRepoPattern.MatchString(repo) {
+		writeJSONError(w, http.StatusBadRequest, "invalid widget or repo")
+		return
+	}
+
+	variables, err := dynawidgetsRequiredVariables(slug, repo)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"variables": variables})
 }
 
 type editorConvertRequest struct {

@@ -164,6 +164,16 @@ function waitForServerReload(before, timeout = 6000) {
 //
 // Palette dock
 //
+const NAME_BREAKS = { Dynawidgets: ["Dyna", "widgets"] };
+
+function paletteName(label) {
+    const el = div("editor-palette-name");
+    (NAME_BREAKS[label] || [label]).forEach((part, i) => {
+        if (i) el.append(document.createElement("wbr"));
+        el.append(part);
+    });
+    return el;
+}
 
 function buildPalette() {
     const dock = div("editor-ui editor-palette-dock");
@@ -182,7 +192,7 @@ function buildPalette() {
         item.draggable = true;
         item.title = schema.label;
         if (schema.icon) item.append(maskIcon("editor-palette-icon", schema.icon));
-        item.append(div("editor-palette-name", schema.label));
+        item.append(paletteName(schema.label));
         item.addEventListener("dragstart", () => (state.drag = { type: schema.type }));
         list.append(item);
         items.push({ el: item, haystack: `${schema.label} ${schema.type}`.toLowerCase() });
@@ -616,7 +626,7 @@ function buildWidgetModal(type, values, structured, onSave) {
         : [basic];
     if (advanced.children.length) sections.push(collapsible("Advanced", advanced));
 
-    openModal(schema.label, sections, () => {
+    openModal(schema.label, sections, async () => {
         const fields = { ...hiddenValues };
         const rawFields = {};
         for (const c of controls) {
@@ -634,6 +644,7 @@ function buildWidgetModal(type, values, structured, onSave) {
             if (raw) rawFields[c.field.name] = value;
             else fields[c.field.name] = value;
         }
+        if (type === "dynawidgets" && !(await confirmDynawidgetVariables(fields))) return false;
         return onSave(fields, rawFields);
     }, type === "custom-api" ? customAPIEditorButton(controls, hiddenValues, cleared) : null, schema.docs);
 }
@@ -711,6 +722,8 @@ function openPasteModal(schema, apply) {
         const pasted = await parsePastedWidget(textarea.value, schema);
         if (!pasted) return false;
         await apply(pasted);
+        // Pasting only stores the placeholder, so the values behind it still have to reach the container.
+        showVariableNotice(findConfigVariables(textarea.value));
         return true;
     });
     textarea.focus();
@@ -765,6 +778,121 @@ async function applyPastedWidget(controls, pasted, cleared) {
     const ignored = Object.keys(pasted).filter((k) => !known.has(k));
     if (ignored.length) toast(`No field for: ${ignored.join(", ")}`, "negative");
     else toast("Fields filled in from the pasted YAML", "positive");
+}
+
+// Mirrors configVariablePattern in config.go so the notice lists exactly what the server expands.
+const configVariablePattern = /(^|.)\$\{(?:([a-zA-Z]+):)?([a-zA-Z0-9_-]+)\}/g;
+const configVariableDocs = "https://dynacat.artur.zone/#configuration/environment-variables";
+
+function findConfigVariables(text) {
+    const found = new Map();
+
+    for (const [, prefix, kind, name] of text.matchAll(configVariablePattern)) {
+        if (prefix === "\\") continue;
+        const token = kind ? `\${${kind}:${name}}` : `\${${name}}`;
+        if (!found.has(token)) found.set(token, { token, kind: kind || "env", name });
+    }
+
+    return [...found.values()];
+}
+
+// Blocks the save instead of letting it fail, since the config cannot load while a value is missing.
+async function confirmDynawidgetVariables({ widget, repo }) {
+    if (!widget) return true;
+
+    const params = new URLSearchParams({ widget });
+    if (repo) params.set("repo", repo);
+
+    let variables;
+    try {
+        ({ variables } = await apiGet(`/dynawidgets/variables?${params}`));
+    } catch {
+        // The template may be unreachable, and the save itself still reports what went wrong.
+        return true;
+    }
+
+    const missing = (variables || [])
+        .filter((v) => !v.set)
+        .map((v) => ({ token: `\${${v.name}}`, kind: v.type, name: v.name }));
+    if (!missing.length) return true;
+
+    showVariableNotice(missing);
+    return false;
+}
+
+function showVariableNotice(vars) {
+    if (!vars.length) return;
+
+    const body = div("editor-notice");
+    const list = div("editor-env-vars");
+    for (const v of vars) list.append(div("editor-env-var", v.token));
+    body.append(list);
+
+    const envNames = vars.filter((v) => v.kind === "env").map((v) => v.name);
+    body.append(codeCard((envNames.length ? envNames : ["API_TOKEN"]).map((n) => `${n}=your-value-here`).join("\n")));
+
+    body.append(noticeSteps([
+        envNames.length
+            ? "Add these lines to the `.env` file next to your compose file, with the real values."
+            : "Add every variable the widget needs to the `.env` file next to your compose file.",
+        "Recreate the container with `docker compose up -d` - the automatic config reload never re-reads the environment.",
+    ]));
+
+    if (vars.some((v) => v.kind === "secret"))
+        body.append(noticeNote("`${secret:name}` is read from `/run/secrets/name`, so mount it as a Docker secret instead of putting it in `.env`."));
+    if (vars.some((v) => v.kind === "readFileFromEnv"))
+        body.append(noticeNote("`${readFileFromEnv:NAME}` expects `NAME` to hold an absolute path, and the file behind it becomes the value."));
+
+    noticeModal("Values found in this widget", [body], configVariableDocs);
+}
+
+function noticeSteps(steps) {
+    const list = document.createElement("ol");
+    list.className = "editor-notice-steps";
+    for (const step of steps) {
+        const item = document.createElement("li");
+        item.append(...richText(step));
+        list.append(item);
+    }
+    return list;
+}
+
+function noticeNote(text) {
+    const note = div("editor-notice-note");
+    note.append(...richText(text));
+    return note;
+}
+
+// Backtick-wrapped spans render as inline code so the notice can name variables and commands.
+function richText(text) {
+    return text.split("`").map((part, i) => {
+        if (i % 2 === 0) return document.createTextNode(part);
+        const code = document.createElement("code");
+        code.className = "editor-code-inline";
+        code.textContent = part;
+        return code;
+    });
+}
+
+function codeCard(text) {
+    const card = div("editor-code-card");
+    const pre = document.createElement("pre");
+    pre.className = "editor-code-block";
+    pre.textContent = text;
+
+    const copy = button("", "editor-code-copy");
+    copy.title = "Copy";
+    copy.innerHTML = iconCopy;
+    copy.addEventListener("click", async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            toast("Copied to the clipboard", "positive");
+        } catch {
+            toast("Could not copy, select the text instead", "negative");
+        }
+    });
+    card.append(pre, copy);
+    return card;
 }
 
 function dedent(text) {
@@ -1827,30 +1955,17 @@ function modalTitle(title, docsURL) {
     return el;
 }
 
-function openModal(title, sections, onSave, footerLeft, docsURL) {
+// buildActions gets the close callback and returns the footer buttons, left to right.
+function modalShell(title, sections, docsURL, buildActions) {
     const overlay = div("editor-ui editor-modal-overlay");
     const modal = div("editor-modal");
-    modal.append(modalTitle(title, docsURL));
 
     const bodyEl = div("editor-modal-body");
     for (const s of sections) bodyEl.append(s);
-    modal.append(bodyEl);
 
     const actions = div("editor-modal-actions");
-    const cancel = button("Cancel", "editor-btn");
-    const saveBtn = button("Save", "editor-btn editor-btn-primary");
-    cancel.addEventListener("click", () => overlay.remove());
-    saveBtn.addEventListener("click", async () => {
-        saveBtn.disabled = true;
-        try {
-            if (await onSave()) overlay.remove();
-        } finally {
-            saveBtn.disabled = false;
-        }
-    });
-    if (footerLeft) actions.append(footerLeft);
-    actions.append(cancel, saveBtn);
-    modal.append(actions);
+    actions.append(...buildActions(() => overlay.remove()).filter(Boolean));
+    modal.append(modalTitle(title, docsURL), bodyEl, actions);
 
     overlay.append(modal);
     let pressedOnBackdrop = false;
@@ -1859,6 +1974,32 @@ function openModal(title, sections, onSave, footerLeft, docsURL) {
         if (e.target === overlay && pressedOnBackdrop) overlay.remove();
     });
     document.body.append(overlay);
+}
+
+function openModal(title, sections, onSave, footerLeft, docsURL) {
+    modalShell(title, sections, docsURL, (close) => {
+        const cancel = button("Cancel", "editor-btn");
+        const saveBtn = button("Save", "editor-btn editor-btn-primary");
+        cancel.addEventListener("click", close);
+        saveBtn.addEventListener("click", async () => {
+            saveBtn.disabled = true;
+            try {
+                if (await onSave()) close();
+            } finally {
+                saveBtn.disabled = false;
+            }
+        });
+        return [footerLeft, cancel, saveBtn];
+    });
+}
+
+function noticeModal(title, sections, docsURL) {
+    const okBtn = button("Got it", "editor-btn editor-btn-primary");
+    modalShell(title, sections, docsURL, (close) => {
+        okBtn.addEventListener("click", close);
+        return [okBtn];
+    });
+    okBtn.focus();
 }
 
 function confirmAction(message, onConfirm, options = {}) {
@@ -2036,5 +2177,6 @@ const iconCog = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const iconGrip = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>`;
 const iconChevron = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>`;
 const iconPaste = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"/></svg>`;
+const iconCopy = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"/></svg>`;
 const iconTrash = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>`;
 const iconMedal = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4V4L9.81 8.36C6.14 9.57 4.14 13.53 5.35 17.2C6.56 20.87 10.5 22.87 14.19 21.66C17.86 20.45 19.86 16.5 18.65 12.82C17.95 10.71 16.3 9.05 14.19 8.36L20 4V2M14.94 19.5L12 17.78L9.06 19.5L9.84 16.17L7.25 13.94L10.66 13.64L12 10.5L13.34 13.63L16.75 13.93L14.16 16.16L14.94 19.5Z"/></svg>`;

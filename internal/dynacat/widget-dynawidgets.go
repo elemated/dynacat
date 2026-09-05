@@ -171,30 +171,36 @@ func (widget *dynawidgetsWidget) Render() template.HTML {
 	return widget.renderTemplate(widget, customAPIWidgetTemplate)
 }
 
-func dynawidgetsParseTemplate(raw string) (templateContent string, required *dynawidgetsRequired) {
+func dynawidgetsSplitTemplate(raw string) (templateContent string, requiredRaw string) {
 	const separator = "required: |"
 
 	idx := strings.LastIndex(raw, separator)
 	if idx == -1 {
-		return raw, nil
+		return raw, ""
 	}
 
-	templateContent = strings.TrimRight(raw[:idx], "\n\r ")
-	requiredRaw := dedentYAMLBlock(raw[idx+len(separator):])
+	return strings.TrimRight(raw[:idx], "\n\r "), dedentYAMLBlock(raw[idx+len(separator):])
+}
 
+func dynawidgetsParseTemplate(raw string) (templateContent string, required *dynawidgetsRequired, err error) {
+	templateContent, requiredRaw := dynawidgetsSplitTemplate(raw)
 	if requiredRaw == "" {
-		return templateContent, nil
+		return templateContent, nil, nil
 	}
 
-	// Deliberately not run through parseConfigVariables: this block comes from a remote
-	// template, and expanding ${...} there would hand it the host's env vars and secret files.
+	// Env placeholders only, so ${secret:...} and ${readFileFromEnv:...} stay untouched.
+	expanded, err := parseEnvVariablesOnly([]byte(requiredRaw))
+	if err != nil {
+		return "", nil, fmt.Errorf("required section: %w", err)
+	}
+
 	required = &dynawidgetsRequired{}
-	if err := yaml.Unmarshal([]byte(requiredRaw), required); err != nil {
+	if err := yaml.Unmarshal(expanded, required); err != nil {
 		slog.Error("Failed to parse dynawidget required section", "error", err)
-		return templateContent, nil
+		return templateContent, nil, nil
 	}
 
-	return templateContent, required
+	return templateContent, required, nil
 }
 
 func dedentYAMLBlock(raw string) string {
@@ -227,20 +233,34 @@ func dedentYAMLBlock(raw string) string {
 }
 
 func dynawidgetsResolveTemplate(slug string, repo string) (templateContent string, title string, required *dynawidgetsRequired, err error) {
+	raw, title, err := dynawidgetsRawTemplate(slug, repo)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	templateContent, required, err = dynawidgetsParseTemplate(raw)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	return templateContent, title, required, nil
+}
+
+// Returns the template exactly as the repository ships it, without any variable expansion.
+func dynawidgetsRawTemplate(slug string, repo string) (raw string, title string, err error) {
 	if !dynawidgetsSlugPattern.MatchString(slug) {
-		return "", "", nil, fmt.Errorf("invalid slug %q", slug)
+		return "", "", fmt.Errorf("invalid slug %q", slug)
 	}
 	templatePath := filepath.Join(dynawidgetsAssetsDir, slug+".txt")
 	if absAssets, aerr := filepath.Abs(dynawidgetsAssetsDir); aerr == nil {
 		if absTemplate, terr := filepath.Abs(templatePath); terr != nil || !strings.HasPrefix(absTemplate, absAssets+string(filepath.Separator)) {
-			return "", "", nil, fmt.Errorf("refusing to resolve template outside assets dir")
+			return "", "", fmt.Errorf("refusing to resolve template outside assets dir")
 		}
 	}
 
 	if data, readErr := os.ReadFile(templatePath); readErr == nil {
 		slog.Info("Using cached dynawidget template", "slug", slug, "path", templatePath)
-		content, req := dynawidgetsParseTemplate(string(data))
-		return content, "", req, nil
+		return string(data), "", nil
 	}
 
 	firstLetter := string(slug[0])
@@ -251,17 +271,17 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 
 	resp, err := defaultHTTPClient.Get(listURL)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("fetching widget list: %w", err)
+		return "", "", fmt.Errorf("fetching widget list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", "", nil, fmt.Errorf("fetching widget list: %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return "", "", fmt.Errorf("fetching widget list: %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 
 	var entries []dynawidgetsListEntry
 	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		return "", "", nil, fmt.Errorf("decoding widget list: %w", err)
+		return "", "", fmt.Errorf("decoding widget list: %w", err)
 	}
 
 	var entry *dynawidgetsListEntry
@@ -273,7 +293,7 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 	}
 
 	if entry == nil {
-		return "", "", nil, fmt.Errorf("widget %q not found in dynawidgets list", slug)
+		return "", "", fmt.Errorf("widget %q not found in dynawidgets list", slug)
 	}
 
 	templateURL := entry.Template
@@ -288,10 +308,10 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 
 	parsedTemplateURL, err := url.Parse(templateURL)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("invalid template URL %q: %w", templateURL, err)
+		return "", "", fmt.Errorf("invalid template URL %q: %w", templateURL, err)
 	}
 	if parsedTemplateURL.Scheme != "https" || parsedTemplateURL.Host != dynawidgetsTemplateHost {
-		return "", "", nil, fmt.Errorf(
+		return "", "", fmt.Errorf(
 			"refusing to fetch template from unexpected host %q (must be https://%s)",
 			parsedTemplateURL.Host, dynawidgetsTemplateHost,
 		)
@@ -301,20 +321,18 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 
 	templateResp, err := defaultHTTPClient.Get(templateURL)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("fetching template: %w", err)
+		return "", "", fmt.Errorf("fetching template: %w", err)
 	}
 	defer templateResp.Body.Close()
 
 	if templateResp.StatusCode != http.StatusOK {
-		return "", "", nil, fmt.Errorf("fetching template: %d %s", templateResp.StatusCode, http.StatusText(templateResp.StatusCode))
+		return "", "", fmt.Errorf("fetching template: %d %s", templateResp.StatusCode, http.StatusText(templateResp.StatusCode))
 	}
 
 	bodyBytes, err := io.ReadAll(templateResp.Body)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("reading template body: %w", err)
+		return "", "", fmt.Errorf("reading template body: %w", err)
 	}
-
-	rawContent := string(bodyBytes)
 
 	if err := os.MkdirAll(dynawidgetsAssetsDir, 0755); err != nil {
 		slog.Error("Failed to create dynawidgets assets directory", "error", err)
@@ -324,6 +342,45 @@ func dynawidgetsResolveTemplate(slug string, repo string) (templateContent strin
 		slog.Info("Cached dynawidget template", "slug", slug, "path", templatePath)
 	}
 
-	templateContent, required = dynawidgetsParseTemplate(rawContent)
-	return templateContent, entry.Title, required, nil
+	return string(bodyBytes), entry.Title, nil
+}
+
+type dynawidgetsVariable struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Set  bool   `json:"set"`
+}
+
+// Lists the variables a widget's required block expects and whether the container has each one.
+func dynawidgetsRequiredVariables(slug string, repo string) ([]dynawidgetsVariable, error) {
+	raw, _, err := dynawidgetsRawTemplate(slug, repo)
+	if err != nil {
+		return nil, err
+	}
+
+	_, requiredRaw := dynawidgetsSplitTemplate(raw)
+	if requiredRaw == "" {
+		return nil, nil
+	}
+
+	variables := make([]dynawidgetsVariable, 0)
+	seen := make(map[string]bool)
+
+	for _, match := range configVariablePattern.FindAllStringSubmatch(requiredRaw, -1) {
+		// Typed variables are never expanded in a template, so only env ones are worth reporting.
+		if match[1] == `\` || match[2] != "" {
+			continue
+		}
+
+		name := match[3]
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		_, isSet := os.LookupEnv(name)
+		variables = append(variables, dynawidgetsVariable{Name: name, Type: configVarTypeEnv, Set: isSet})
+	}
+
+	return variables, nil
 }

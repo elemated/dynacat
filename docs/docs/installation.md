@@ -6,19 +6,23 @@ Create a new directory called `dynacat` as well as the template files within it 
 
 ```bash
 mkdir dynacat && cd dynacat && \
-curl -sL https://github.com/glanceapp/docker-compose-template/archive/refs/heads/main.tar.gz | tar -xzf - --strip-components 2 && \
-sed -i \
-  -e 's/^  glance:/  dynacat:/' \
-  -e 's/^    container_name: glance/    container_name: dynacat/' \
-  -e 's/^    image: glanceapp\/glance/    image: panonim\/dynacat/' \
-  docker-compose.yml && \
-mv config/glance.yml config/dynacat.yml
+curl -sL https://github.com/Panonim/dynacat-compose-template/releases/latest/download/dynacat.tar.gz | tar -xzf -
 ```
 
-> [!IMPORTANT]
-> Remember to keep the command exactly as-is; otherwise, the image won't work.
+*[click here to view the files that will be created](https://github.com/Panonim/dynacat-compose-template/tree/main/root)*
 
-*[click here to view the files that will be created](https://github.com/glanceapp/docker-compose-template/tree/main/root)*
+<details>
+<summary>Verifying the download</summary>
+
+<br>
+Every release ships a checksum next to the archive:
+
+```bash
+curl -sLO https://github.com/Panonim/dynacat-compose-template/releases/latest/download/dynacat.tar.gz
+curl -sLO https://github.com/Panonim/dynacat-compose-template/releases/latest/download/dynacat.tar.gz.sha256
+sha256sum -c dynacat.tar.gz.sha256
+```
+</details>
 
 Then, edit the following files as desired:
 * `docker-compose.yml` to configure the port, volumes and other containery things
@@ -69,7 +73,7 @@ Then, create a new directories called `config` & `assets` and download the examp
 mkdir config && wget -O config/dynacat.yml https://raw.githubusercontent.com/Panonim/dynacat/refs/heads/main/docs/docs/dynacat.yml
 ```
 
-Feel free to edit the `dynacat.yml` file to your liking, and when ready run:
+Feel free to edit the `dynacat.yml` file to your liking, or leave it as is and use the [UI editor](ui-editor.md) once the container is up. When ready run:
 
 ```bash
 docker compose up -d

@@ -1010,6 +1010,7 @@ func (a *application) server() (func() error, func() error) {
 		mux.HandleFunc("POST /api/editor/config", a.handleEditorConfigSave)
 		mux.HandleFunc("POST /api/editor/convert", a.handleEditorConvert)
 		mux.HandleFunc("POST /api/editor/custom-api/preview", a.handleEditorCustomAPIPreview)
+		mux.HandleFunc("GET /api/editor/dynawidgets/variables", a.handleEditorDynawidgetVariables)
 	}
 
 	mux.Handle(

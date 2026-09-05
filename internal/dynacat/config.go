@@ -193,6 +193,15 @@ var configVariablePattern = regexp.MustCompile(`(^|.)\$\{(?:([a-zA-Z]+):)?([a-zA
 
 // TODO: don't match against commented out sections
 func parseConfigVariables(contents []byte) ([]byte, error) {
+	return expandConfigVariables(contents, true)
+}
+
+// Expands ${ENV_VAR} only, so a remote template cannot pull a mounted secret into the URL it calls.
+func parseEnvVariablesOnly(contents []byte) ([]byte, error) {
+	return expandConfigVariables(contents, false)
+}
+
+func expandConfigVariables(contents []byte, allowTypedVariables bool) ([]byte, error) {
 	var err error
 
 	replaced := configVariablePattern.ReplaceAllFunc(contents, func(match []byte) []byte {
@@ -215,6 +224,9 @@ func parseConfigVariables(contents []byte) ([]byte, error) {
 		}
 
 		typeAsString, variableName := string(groups[2]), string(groups[3])
+		if typeAsString != "" && !allowTypedVariables {
+			return match
+		}
 		variableType := ternary(typeAsString == "", configVarTypeEnv, typeAsString)
 
 		parsedValue, returnOriginal, localErr := parseConfigVariableOfType(variableType, variableName)
