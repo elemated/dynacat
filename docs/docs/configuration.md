@@ -1438,7 +1438,7 @@ These properties work the same as in the [custom-api widget](#custom-api) and al
 Learn more about building and contributing widgets in the [Contributing to Dynawidgets](contributing.md) guide.
 
 ### DNS Stats
-Display statistics from a self-hosted ad-blocking DNS resolver such as AdGuard Home, Pi-hole, or Technitium.
+Display statistics from a self-hosted ad-blocking DNS resolver such as AdGuard Home, Pi-hole, Technitium, or Blocky.
 
 Example:
 
@@ -1456,7 +1456,7 @@ Preview:
 
 > [!NOTE]
 >
-> When using AdGuard Home the 3rd statistic on top will be the average latency and when using Pi-hole or Technitium it will be the total number of blocked domains from all adlists.
+> When using AdGuard Home or Blocky the 3rd statistic on top will be the average latency and when using Pi-hole or Technitium it will be the total number of blocked domains from all adlists.
 
 #### Properties
 
@@ -1473,13 +1473,15 @@ Preview:
 | hour-format | string | no | 12h |
 
 ##### `service`
-Either `adguard`, `technitium`, or `pihole` (major version 5 and below) or `pihole-v6` (major version 6 and above).
+Either `adguard`, `technitium`, `blocky`, or `pihole` (major version 5 and below) or `pihole-v6` (major version 6 and above).
 
 ##### `allow-insecure`
 Whether to allow invalid/self-signed certificates when making the request to the service.
 
 ##### `url`
 The base URL of the service.
+
+When using Blocky this is the base URL of the **Prometheus** instance scraping Blocky, not of Blocky itself, since Blocky has no stats API of its own. The widget queries it through `/api/v1/query` and `/api/v1/query_range`.
 
 ##### `username`
 Only required when using AdGuard Home. The username used to log into the admin dashboard.
@@ -1502,6 +1504,38 @@ Whether to hide the list of top blocked domains.
 
 ##### `hour-format`
 Whether to display the relative time in the graph in `12h` or `24h` format.
+
+#### Using Blocky
+
+Blocky needs its Prometheus metrics enabled and scraped before the widget has anything to read:
+
+`config.yml` (Blocky)
+```yaml
+prometheus:
+  enable: true
+  path: /metrics
+```
+
+`prometheus.yml`
+```yaml
+scrape_configs:
+  - job_name: blocky
+    static_configs:
+      - targets:
+          - blocky:4000
+```
+
+Then point the widget at Prometheus:
+
+```yaml
+- type: dns-stats
+  service: blocky
+  url: http://prometheus:9090
+```
+
+Neither `username`, `password` nor `token` are used for Blocky, so the Prometheus instance has to be reachable from Dynacat without authentication.
+
+The statistics come from the `blocky_query_total`, `blocky_response_total`, `blocky_request_duration_seconds` and `blocky_denylist_cache_entries` metrics. Blocky exposes no per-domain counters, so the top blocked domains list is always empty regardless of `hide-top-domains`.
 
 ### Docker Containers
 
@@ -2675,6 +2709,10 @@ Preview:
 | autocomplete-provider | string | no | duckduckgo |
 | include-bookmarks | boolean | no | false |
 | cross-page-bookmarks | boolean | no | false |
+| include-docker | boolean | no | false |
+| cross-page-docker | boolean | no | false |
+| include-monitor | boolean | no | false |
+| cross-page-monitor | boolean | no | false |
 | bangs | array | no | |
 
 ##### `search-engine`
@@ -2758,6 +2796,18 @@ When set to `true`, implies [`include-bookmarks`](#include-bookmarks) and widens
 - type: search
   cross-page-bookmarks: true
 ```
+
+##### `include-docker`
+When set to `true`, matches what you type against the container names from the [docker containers](#docker-containers) widgets on the same page. Only containers with a URL are matched and each match shows the container's [icon](#icons).
+
+##### `cross-page-docker`
+When set to `true`, widens the search to containers from every page.
+
+##### `include-monitor`
+When set to `true`, matches what you type against the site titles from the [monitor](#monitor) widgets on the same page. Each match shows the site's [icon](#icons) and points at the same URL as the widget.
+
+##### `cross-page-monitor`
+When set to `true`, widens the search to sites from every page.
 
 ##### `bangs`
 What now? [Bangs](https://duckduckgo.com/bangs). They're shortcuts that allow you to use the same search box for many different sites. Assuming you have it configured, if for example you start your search input with `!yt` you'd be able to perform a search on YouTube:

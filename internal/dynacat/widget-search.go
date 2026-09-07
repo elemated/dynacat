@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 )
 
 var searchWidgetTemplate = mustParseTemplate("search.html", "widget-base.html")
@@ -17,7 +18,8 @@ type SearchBang struct {
 	Icon     customIconField `yaml:"icon"`
 }
 
-type searchBookmarkMatch struct {
+type searchTargetMatch struct {
+	Kind   string
 	Title  string
 	URL    string
 	Target string
@@ -33,23 +35,28 @@ type searchAutocompleteSource struct {
 
 type searchWidget struct {
 	widgetBase                `yaml:",inline"`
-	cachedHTML                template.HTML         `yaml:"-"`
-	Frameless                 bool                  `yaml:"frameless"`
-	SearchEngine              string                `yaml:"search-engine"`
-	DegoogURL                 string                `yaml:"degoog-url"`
-	autocompleteAllowPrivate  bool                  `yaml:"-"`
-	AutocompleteEnabled       *bool                 `yaml:"autocomplete"`
-	Autocomplete              bool                  `yaml:"-"`
-	AutocompleteProvider      string                `yaml:"autocomplete-provider"`
-	DeprecatedAutocompleteURL string                `yaml:"autocomplete-url"`
-	Bangs                     []SearchBang          `yaml:"bangs"`
-	NewTab                    bool                  `yaml:"new-tab"`
-	Target                    string                `yaml:"target"`
-	Autofocus                 bool                  `yaml:"autofocus"`
-	Placeholder               string                `yaml:"placeholder"`
-	IncludeBookmarks          bool                  `yaml:"include-bookmarks"`
-	CrossPageBookmarks        bool                  `yaml:"cross-page-bookmarks"`
-	BookmarkMatches           []searchBookmarkMatch `yaml:"-"`
+	cachedHTML                template.HTML       `yaml:"-"`
+	Frameless                 bool                `yaml:"frameless"`
+	SearchEngine              string              `yaml:"search-engine"`
+	DegoogURL                 string              `yaml:"degoog-url"`
+	autocompleteAllowPrivate  bool                `yaml:"-"`
+	AutocompleteEnabled       *bool               `yaml:"autocomplete"`
+	Autocomplete              bool                `yaml:"-"`
+	AutocompleteProvider      string              `yaml:"autocomplete-provider"`
+	DeprecatedAutocompleteURL string              `yaml:"autocomplete-url"`
+	Bangs                     []SearchBang        `yaml:"bangs"`
+	NewTab                    bool                `yaml:"new-tab"`
+	Target                    string              `yaml:"target"`
+	Autofocus                 bool                `yaml:"autofocus"`
+	Placeholder               string              `yaml:"placeholder"`
+	IncludeBookmarks          bool                `yaml:"include-bookmarks"`
+	CrossPageBookmarks        bool                `yaml:"cross-page-bookmarks"`
+	IncludeDocker             bool                `yaml:"include-docker"`
+	CrossPageDocker           bool                `yaml:"cross-page-docker"`
+	IncludeMonitor            bool                `yaml:"include-monitor"`
+	CrossPageMonitor          bool                `yaml:"cross-page-monitor"`
+	BookmarkMatches           []searchTargetMatch `yaml:"-"`
+	LiveMatches               []searchTargetMatch `yaml:"-"`
 }
 
 func convertSearchUrl(url string) string {
@@ -96,6 +103,14 @@ func (widget *searchWidget) initialize() error {
 
 	if widget.CrossPageBookmarks {
 		widget.IncludeBookmarks = true
+	}
+
+	if widget.CrossPageDocker {
+		widget.IncludeDocker = true
+	}
+
+	if widget.CrossPageMonitor {
+		widget.IncludeMonitor = true
 	}
 
 	if widget.SearchEngine == "" {
@@ -179,7 +194,7 @@ func (widget *searchWidget) collectBookmarks(app *application, pageFilter *page)
 
 	ownPage := app.widgetToPage[widget.GetID()]
 
-	var matches []searchBookmarkMatch
+	var matches []searchTargetMatch
 	seen := make(map[string]bool)
 	for id, w := range app.widgetByID {
 		bookmarks, ok := w.(*bookmarksWidget)
@@ -192,7 +207,7 @@ func (widget *searchWidget) collectBookmarks(app *application, pageFilter *page)
 			continue
 		}
 
-		if source != ownPage && source != nil && (len(source.AllowedUsers) > 0 || len(source.AllowedGroups) > 0) {
+		if searchSourceIsRestricted(source, ownPage) {
 			continue
 		}
 
@@ -204,7 +219,8 @@ func (widget *searchWidget) collectBookmarks(app *application, pageFilter *page)
 				}
 				seen[key] = true
 
-				matches = append(matches, searchBookmarkMatch{
+				matches = append(matches, searchTargetMatch{
+					Kind:   "bookmark",
 					Title:  link.Title,
 					URL:    link.URL,
 					Target: link.Target,
@@ -220,7 +236,125 @@ func (widget *searchWidget) collectBookmarks(app *application, pageFilter *page)
 	widget.cachedHTML = widget.renderTemplate(widget, searchWidgetTemplate)
 }
 
+// Containers and sites are only known once their widget has updated, so each of them
+// publishes a snapshot here for search widgets on any page to read.
+type searchTargetRegistry struct {
+	mu         sync.RWMutex
+	byWidgetID map[uint64][]searchTargetMatch
+}
+
+func (registry *searchTargetRegistry) publish(widgetID uint64, matches []searchTargetMatch) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+
+	if registry.byWidgetID == nil {
+		registry.byWidgetID = make(map[uint64][]searchTargetMatch)
+	}
+
+	registry.byWidgetID[widgetID] = matches
+}
+
+// Published slices are replaced rather than modified, so handing them to fn is safe.
+func (registry *searchTargetRegistry) each(fn func(widgetID uint64, matches []searchTargetMatch)) {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+
+	for id, matches := range registry.byWidgetID {
+		fn(id, matches)
+	}
+}
+
+func appendSearchTarget(matches []searchTargetMatch, kind, title, url string, sameTab bool, icon customIconField) []searchTargetMatch {
+	if title == "" || url == "" {
+		return matches
+	}
+
+	return append(matches, searchTargetMatch{
+		Kind:   kind,
+		Title:  title,
+		URL:    url,
+		Target: ternary(sameTab, "", "_blank"),
+		Icon:   icon,
+	})
+}
+
+func publishSearchTargets(widget widget, providers *widgetProviders, matches []searchTargetMatch) {
+	if providers == nil || providers.app == nil {
+		return
+	}
+
+	providers.app.searchTargets.publish(widget.GetID(), matches)
+}
+
+// Pages limited to certain users or groups stay hidden unless the search widget sits on them.
+func searchSourceIsRestricted(source, ownPage *page) bool {
+	return source != ownPage && source != nil && (len(source.AllowedUsers) > 0 || len(source.AllowedGroups) > 0)
+}
+
+// Gathered per render rather than once at startup, since the snapshots change while the app runs.
+func (widget *searchWidget) collectLiveMatches() {
+	if widget.Providers == nil || widget.Providers.app == nil {
+		return
+	}
+
+	app := widget.Providers.app
+	ownPage := app.widgetToPage[widget.GetID()]
+
+	var matches []searchTargetMatch
+	seen := make(map[string]bool)
+
+	app.searchTargets.each(func(id uint64, targets []searchTargetMatch) {
+		source := app.widgetToPage[id]
+		if searchSourceIsRestricted(source, ownPage) {
+			return
+		}
+
+		for _, target := range targets {
+			var include, crossPage bool
+			switch target.Kind {
+			case "docker":
+				include, crossPage = widget.IncludeDocker, widget.CrossPageDocker
+			case "monitor":
+				include, crossPage = widget.IncludeMonitor, widget.CrossPageMonitor
+			}
+
+			if !include || (!crossPage && source != ownPage) {
+				continue
+			}
+
+			key := target.Kind + "\x00" + target.Title + "\x00" + target.URL
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
+			matches = append(matches, target)
+		}
+	})
+
+	sort.Slice(matches, func(i, j int) bool {
+		return strings.ToLower(matches[i].Title) < strings.ToLower(matches[j].Title)
+	})
+
+	widget.LiveMatches = matches
+}
+
+func (widget *searchWidget) TargetsEnabled() bool {
+	return widget.IncludeBookmarks || widget.IncludeDocker || widget.IncludeMonitor
+}
+
+func (widget *searchWidget) TargetMatches() []searchTargetMatch {
+	matches := make([]searchTargetMatch, 0, len(widget.BookmarkMatches)+len(widget.LiveMatches))
+	matches = append(matches, widget.BookmarkMatches...)
+	return append(matches, widget.LiveMatches...)
+}
+
 func (widget *searchWidget) Render() template.HTML {
+	if widget.IncludeDocker || widget.IncludeMonitor {
+		widget.collectLiveMatches()
+		return widget.renderTemplate(widget, searchWidgetTemplate)
+	}
+
 	if widget.cachedHTML == "" {
 		widget.cachedHTML = widget.renderTemplate(widget, searchWidgetTemplate)
 	}

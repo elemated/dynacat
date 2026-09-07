@@ -63,6 +63,18 @@ func (widget *dockerContainersWidget) update(ctx context.Context) {
 	containers.sortByStateIconThenTitle()
 	widget.cacheContainerIcons(containers)
 	widget.Containers = containers
+	widget.publishSearchTargets(containers)
+}
+
+func (widget *dockerContainersWidget) publishSearchTargets(containers dockerContainerList) {
+	matches := make([]searchTargetMatch, 0, len(containers))
+
+	for i := range containers {
+		container := &containers[i]
+		matches = appendSearchTarget(matches, "docker", container.Name, container.URL, container.SameTab, container.Icon)
+	}
+
+	publishSearchTargets(widget, widget.Providers, matches)
 }
 
 func (widget *dockerContainersWidget) Render() template.HTML {

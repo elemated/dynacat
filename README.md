@@ -236,3 +236,11 @@ You can list multiple origins. Each entry must be a full origin including the sc
 <div style='text-align: center;'>
 
 **If you like this project, please consider [sponsoring](https://ko-fi.com/panonim).**
+
+<a href="https://www.star-history.com/?repos=panonim%2Fdynacat&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=panonim/dynacat&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=panonim/dynacat&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=panonim/dynacat&type=date&legend=top-left" />
+ </picture>
+</a>

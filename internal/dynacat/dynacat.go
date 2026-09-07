@@ -52,6 +52,7 @@ type application struct {
 	widgetByID    map[uint64]widget
 	widgetByAPIID map[string]widget
 	widgetToPage  map[uint64]*page
+	searchTargets searchTargetRegistry
 
 	RequiresAuth           bool
 	OIDCEnabled            bool

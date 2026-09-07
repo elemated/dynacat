@@ -94,6 +94,26 @@ func (widget *monitorWidget) setProviders(providers *widgetProviders) {
 	for i := range widget.Sites {
 		widget.Sites[i].Icon.prepare(widget.Providers)
 	}
+
+	widget.publishSearchTargets()
+}
+
+func (widget *monitorWidget) publishSearchTargets() {
+	matches := make([]searchTargetMatch, 0, len(widget.Sites))
+
+	for i := range widget.Sites {
+		site := &widget.Sites[i]
+
+		// URL is only filled in once the site has been checked at least once.
+		url := site.URL
+		if url == "" && site.SiteStatusRequest != nil {
+			url = site.DefaultURL
+		}
+
+		matches = appendSearchTarget(matches, "monitor", site.Title, url, site.SameTab, site.Icon)
+	}
+
+	publishSearchTargets(widget, widget.Providers, matches)
 }
 
 func (widget *monitorWidget) update(ctx context.Context) {
@@ -153,6 +173,8 @@ func (widget *monitorWidget) update(ctx context.Context) {
 			})
 		}
 	}
+
+	widget.publishSearchTargets()
 }
 
 // Kept outside of the widgets so that the history survives a config reload, which

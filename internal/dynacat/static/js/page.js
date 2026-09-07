@@ -358,12 +358,13 @@ function setupSearchBoxes() {
             });
         }
 
-        if (widget.dataset.autocomplete === "true" || widget.dataset.bookmarksEnabled === "true") {
+        if (widget.dataset.autocomplete === "true" || widget.dataset.targetsEnabled === "true") {
             const autocompleteEnabled = widget.dataset.autocomplete === "true";
-            const bookmarksEnabled = widget.dataset.bookmarksEnabled === "true";
+            const targetsEnabled = widget.dataset.targetsEnabled === "true";
             const autocompleteEl = widget.querySelector(".search-autocomplete");
-            const bookmarks = Array.from(widget.querySelectorAll(".search-bookmarks > input")).map((el) => ({
-                type: "bookmark",
+            const targets = Array.from(widget.querySelectorAll(".search-targets > input")).map((el) => ({
+                type: "target",
+                kind: el.dataset.kind || "bookmark",
                 title: el.dataset.title,
                 url: el.dataset.url,
                 target: el.dataset.target || "",
@@ -445,18 +446,24 @@ function setupSearchBoxes() {
                 acIndex = i;
             };
 
-            const BOOKMARK_MATCH_LIMIT = 3;
+            const TARGET_MATCH_LIMIT = 3;
+            const TARGET_FALLBACK_GLYPHS = { bookmark: "↗", docker: "▣", monitor: "◉" };
 
-            const matchBookmarks = (query) => {
-                if (!bookmarksEnabled || !query) return [];
+            // Each kind gets its own limit so bookmarks can't crowd out containers or sites.
+            const matchTargets = (query) => {
+                if (!targetsEnabled || !query) return [];
                 const lowerQuery = query.toLowerCase();
-                return bookmarks
-                    .filter((b) => b.title && b.title.toLowerCase().startsWith(lowerQuery))
-                    .slice(0, BOOKMARK_MATCH_LIMIT);
+                const countPerKind = {};
+
+                return targets.filter((t) => {
+                    if (!t.title || !t.title.toLowerCase().startsWith(lowerQuery)) return false;
+                    countPerKind[t.kind] = (countPerKind[t.kind] || 0) + 1;
+                    return countPerKind[t.kind] <= TARGET_MATCH_LIMIT;
+                });
             };
 
             const selectItem = (item) => {
-                if (item.type === "bookmark") {
+                if (item.type === "target") {
                     hideAC();
                     if (item.target === "_blank") {
                         window.open(item.url, item.target).focus();
@@ -479,19 +486,19 @@ function setupSearchBoxes() {
                 items.forEach((acItem, idx) => {
                     const item = document.createElement("div");
 
-                    if (acItem.type === "bookmark") {
-                        item.className = "search-autocomplete-item search-autocomplete-item-bookmark";
+                    if (acItem.type === "target") {
+                        item.className = "search-autocomplete-item search-autocomplete-item-target search-autocomplete-item-" + acItem.kind;
                         if (acItem.icon) {
                             const icon = document.createElement("img");
-                            icon.className = "search-autocomplete-item-bookmark-icon" + (acItem.iconAutoInvert ? " flat-icon" : "");
+                            icon.className = "search-autocomplete-item-target-icon" + (acItem.iconAutoInvert ? " flat-icon" : "");
                             icon.src = acItem.icon;
                             icon.alt = "";
                             item.appendChild(icon);
                         } else {
-                            const arrow = document.createElement("span");
-                            arrow.className = "search-autocomplete-item-bookmark-arrow";
-                            arrow.textContent = "↗";
-                            item.appendChild(arrow);
+                            const fallback = document.createElement("span");
+                            fallback.className = "search-autocomplete-item-target-fallback";
+                            fallback.textContent = TARGET_FALLBACK_GLYPHS[acItem.kind] || TARGET_FALLBACK_GLYPHS.bookmark;
+                            item.appendChild(fallback);
                         }
                         const label = document.createElement("span");
                         label.textContent = acItem.title;
@@ -515,7 +522,7 @@ function setupSearchBoxes() {
 
             const updateSuggestions = (query, phraseItems) => {
                 if (inputElement.value.trim() !== query) return;
-                renderAC([...matchBookmarks(query), ...phraseItems]);
+                renderAC([...matchTargets(query), ...phraseItems]);
             };
 
             const fetchSuggestions = (query) => {
@@ -555,10 +562,14 @@ function setupSearchBoxes() {
                     event.preventDefault();
                     setACIndex(Math.min(acIndex + 1, acItems.length - 1));
                 } else if (event.key === "ArrowUp") {
+                    // Stop the document handler from also restoring the last query.
                     event.preventDefault();
+                    event.stopPropagation();
                     setACIndex(Math.max(acIndex - 1, -1));
                 } else if (event.key === "Enter" && acIndex >= 0) {
+                    // Stop the document handler from also running a search for the query.
                     event.preventDefault();
+                    event.stopPropagation();
                     selectItem(acItems[acIndex]);
                 } else if (event.key === "Escape") {
                     hideAC();
