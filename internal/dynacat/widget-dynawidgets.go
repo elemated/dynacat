@@ -20,7 +20,7 @@ const dynawidgetsDefaultRepo = "main"
 const dynawidgetsAssetsDir = "/app/assets/dynawidgets"
 
 var dynawidgetsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
-var dynawidgetsRepoPattern = regexp.MustCompile(`^[a-zA-Z0-9._/-]{1,64}$`)
+var dynawidgetsRepoPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 var dynawidgetsTemplateHost = "raw.githubusercontent.com"
 
 type dynawidgetsWidget struct {
@@ -81,7 +81,7 @@ func (widget *dynawidgetsWidget) initialize() error {
 	widget.slug = slug
 	widget.repo = repo
 	widget.templateContent = templateContent
-	widget.templateModTime = dynawidgetsTemplateModTime(slug)
+	widget.templateModTime = dynawidgetsTemplateModTime(slug, repo)
 
 	if widget.Title == "" && title != "" {
 		widget.Title = title
@@ -173,7 +173,7 @@ func (widget *dynawidgetsWidget) refreshTemplate() {
 		}
 	}
 
-	modTime := dynawidgetsTemplateModTime(widget.slug)
+	modTime := dynawidgetsTemplateModTime(widget.slug, widget.repo)
 	if modTime.IsZero() || modTime.Equal(widget.templateModTime) {
 		return
 	}
@@ -309,14 +309,14 @@ func dynawidgetsRawTemplate(slug string, repo string) (raw string, title string,
 		repo = dynawidgetsDefaultRepo
 	}
 
-	templatePath, err := dynawidgetsAssetPath(slug, ".txt")
+	templatePath, err := dynawidgetsAssetPath(slug, repo, ".txt")
 	if err != nil {
 		return "", "", err
 	}
 
 	if data, readErr := os.ReadFile(templatePath); readErr == nil {
 		slog.Info("Using cached dynawidget template", "slug", slug, "path", templatePath)
-		if meta := dynawidgetsReadMeta(slug); meta != nil {
+		if meta := dynawidgetsReadMeta(slug, repo); meta != nil {
 			title = meta.Title
 		}
 		return string(data), title, nil
@@ -340,8 +340,7 @@ func dynawidgetsRawTemplate(slug string, repo string) (raw string, title string,
 		slog.Error("Failed to cache dynawidget template", "error", err, "path", templatePath)
 	} else {
 		slog.Info("Cached dynawidget template", "slug", slug, "path", templatePath)
-		dynawidgetsWriteMeta(slug, &dynawidgetsTemplateMeta{
-			Repo:      repo,
+		dynawidgetsWriteMeta(slug, repo, &dynawidgetsTemplateMeta{
 			URL:       templateURL,
 			Title:     title,
 			ETag:      etag,

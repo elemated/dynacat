@@ -132,7 +132,7 @@ func (widget *calendarWidget) getReleasesForMonth(ctx context.Context, year int,
 				if widget.Providers != nil && widget.Providers.app != nil && item.Thumbnail != "" {
 					hash := hashString(item.Thumbnail)
 					widget.Providers.app.registerImageProxy(hash, item.Thumbnail, service.AllowInsecure)
-					item.Thumbnail = "/api/image-proxy/" + hash
+					item.Thumbnail = widget.GetBaseURL() + "/api/image-proxy/" + hash
 				}
 
 				data[date] = append(data[date], item)

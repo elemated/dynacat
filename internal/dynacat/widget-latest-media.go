@@ -596,7 +596,7 @@ func (widget *latestMediaWidget) cacheImageURLs() {
 
 func (widget *latestMediaWidget) resolveCachedImageURL(ctx context.Context, originalURL string, allowInsecure bool, kind string) string {
 	hash := hashString(originalURL)
-	proxyURL := fmt.Sprintf("/api/image-proxy/%s", hash)
+	proxyURL := widget.GetBaseURL() + "/api/image-proxy/" + hash
 
 	if widget.Providers != nil && widget.Providers.app != nil {
 		widget.Providers.app.registerImageProxy(hash, originalURL, allowInsecure)

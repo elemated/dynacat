@@ -190,6 +190,11 @@ func (widget *calendarWidget) handleRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if !withinCalendarReleaseRange(year, time.Month(month), time.Now()) {
+		http.Error(w, "month out of range", http.StatusBadRequest)
+		return
+	}
+
 	if len(widget.Hosts) == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("{}"))
@@ -201,4 +206,12 @@ func (widget *calendarWidget) handleRequest(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	json.NewEncoder(w).Encode(data)
+}
+
+// Bounds the release cache and the traffic a caller can aim at the configured services.
+func withinCalendarReleaseRange(year int, month time.Month, now time.Time) bool {
+	requested := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+	current := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	return !requested.Before(current.AddDate(-2, 0, 0)) && !requested.After(current.AddDate(2, 0, 0))
 }

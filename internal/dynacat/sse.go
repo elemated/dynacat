@@ -20,9 +20,17 @@ type sseClient struct {
 	user *authenticatedUser
 }
 
+// Dropped once full, widgets re-register their images on the next update.
+const imageProxyMaxEntries = 10000
+
 func (a *application) registerImageProxy(hash string, url string, allowInsecure bool) {
 	a.imageProxyMu.Lock()
 	defer a.imageProxyMu.Unlock()
+
+	if len(a.imageProxyURLs) >= imageProxyMaxEntries {
+		clear(a.imageProxyURLs)
+	}
+
 	a.imageProxyURLs[hash] = imageProxyInfo{URL: url, AllowInsecure: allowInsecure}
 }
 
@@ -93,7 +101,7 @@ func (a *application) handleImageProxyRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	client := ternary(info.AllowInsecure, defaultInsecureHTTPClient, defaultHTTPClient)
+	client := ternary(info.AllowInsecure, publicOnlyInsecureHTTPClient, publicOnlyHTTPClient)
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, info.URL, nil)
 	if err != nil {
 		http.Error(w, "Failed to fetch image", http.StatusInternalServerError)
@@ -128,12 +136,10 @@ func (a *application) handleImageProxyRequest(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		return
-	}
+	io.Copy(w, io.LimitReader(resp.Body, maxResponseBytes))
 }
 
-func (a *application) respondWithOpenSearchSuggestions(w http.ResponseWriter, r *http.Request, requestURL string) {
+func (a *application) respondWithOpenSearchSuggestions(w http.ResponseWriter, r *http.Request, requestURL string, client *http.Client) {
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, requestURL, nil)
 	if err != nil {
 		http.Error(w, "Failed to create request", http.StatusInternalServerError)
@@ -141,7 +147,7 @@ func (a *application) respondWithOpenSearchSuggestions(w http.ResponseWriter, r 
 	}
 	setBrowserUserAgentHeader(req)
 
-	resp, err := defaultHTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, "Failed to fetch suggestions", http.StatusBadGateway)
 		return
@@ -191,7 +197,7 @@ func (a *application) handleSearchAutocompleteRequest(w http.ResponseWriter, r *
 
 	if provider == "brave" {
 		braveURL := "https://search.brave.com/api/suggest?" + url.Values{"q": {query}, "rich": {"false"}}.Encode()
-		a.respondWithOpenSearchSuggestions(w, r, braveURL)
+		a.respondWithOpenSearchSuggestions(w, r, braveURL, publicOnlyHTTPClient)
 		return
 	}
 
@@ -213,15 +219,17 @@ func (a *application) handleSearchAutocompleteRequest(w http.ResponseWriter, r *
 		customURL := strings.ReplaceAll(source.URL, "{QUERY}", url.QueryEscape(query))
 		// Self-hosted instances named in the config are allowed to sit on a private
 		// address, unlike URLs that could otherwise be probed through this endpoint.
+		client := defaultHTTPClient
 		if !source.AllowPrivate {
 			if err := validatePublicFetchURL(customURL); err != nil {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("[]"))
 				return
 			}
+			client = publicOnlyHTTPClient
 		}
 
-		a.respondWithOpenSearchSuggestions(w, r, customURL)
+		a.respondWithOpenSearchSuggestions(w, r, customURL, client)
 		return
 	}
 
@@ -233,7 +241,7 @@ func (a *application) handleSearchAutocompleteRequest(w http.ResponseWriter, r *
 	}
 	setBrowserUserAgentHeader(req)
 
-	resp, err := defaultHTTPClient.Do(req)
+	resp, err := publicOnlyHTTPClient.Do(req)
 	if err != nil {
 		http.Error(w, "Failed to fetch suggestions", http.StatusBadGateway)
 		return
@@ -241,7 +249,7 @@ func (a *application) handleSearchAutocompleteRequest(w http.ResponseWriter, r *
 	defer resp.Body.Close()
 
 	w.WriteHeader(http.StatusOK)
-	io.Copy(w, resp.Body)
+	io.Copy(w, io.LimitReader(resp.Body, maxResponseBytes))
 }
 
 func (a *application) handleSSEUpdates(w http.ResponseWriter, r *http.Request) {
@@ -278,7 +286,7 @@ func (a *application) handleSSEUpdates(w http.ResponseWriter, r *http.Request) {
 	a.sseRegisterClient(client)
 	defer a.sseUnregisterClient(client)
 
-	authRecheck := time.NewTicker(60 * time.Second)
+	authRecheck := time.NewTicker(15 * time.Second)
 	defer authRecheck.Stop()
 
 	for {

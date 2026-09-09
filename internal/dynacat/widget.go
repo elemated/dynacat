@@ -221,7 +221,7 @@ func (p *widgetProviders) SecureImageURL(ctx context.Context, imageURL string, a
 		}
 	}
 
-	return fmt.Sprintf("/api/image-proxy/%s", hash)
+	return p.baseURL + "/api/image-proxy/" + hash
 }
 
 func (w *widgetBase) requiresUpdate(now *time.Time) bool {

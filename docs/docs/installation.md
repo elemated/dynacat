@@ -67,6 +67,32 @@ services:
     env_file: .env
 ```
 
+### Running as a non-root user
+
+The image runs as root by default. Nothing in Dynacat needs it, and dropping to your own UID
+and GID is recommended, especially if you mount the docker socket:
+
+```yaml
+services:
+  dynacat:
+    user: "1000:1000"
+```
+
+Two things have to line up for this to work:
+
+- `config` and `assets` have to be readable and writable by that user, otherwise the UI editor
+  cannot save and the dynawidgets cache cannot be written: `chown -R 1000:1000 config assets`.
+- `/app` itself stays owned by root, so the image cache has to be moved onto a mounted volume
+  by setting `cache-dir` in your `dynacat.yml`:
+
+```yaml
+server:
+  cache-dir: /app/assets/.cache
+```
+
+If you mount the docker socket for the docker widgets, the user also has to be in the group
+that owns it, which is normally `docker`.
+
 Then, create a new directories called `config` & `assets` and download the example starting [`dynacat.yml`](https://github.com/Panonim/dynacat/blob/main/docs/docs/dynacat.yml) file into it by running:
 
 ```bash

@@ -82,6 +82,27 @@ var defaultInsecureHTTPClient = &http.Client{
 	},
 }
 
+// Re-checks every hop so a public host cannot redirect the fetch to a private address.
+func checkPublicRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+
+	return validatePublicFetchURL(req.URL.String())
+}
+
+func newPublicOnlyHTTPClient(base *http.Client) *http.Client {
+	return &http.Client{
+		Transport:     base.Transport,
+		Timeout:       defaultClientTimeout,
+		CheckRedirect: checkPublicRedirect,
+	}
+}
+
+var publicOnlyHTTPClient = newPublicOnlyHTTPClient(defaultHTTPClient)
+
+var publicOnlyInsecureHTTPClient = newPublicOnlyHTTPClient(defaultInsecureHTTPClient)
+
 type requestDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }

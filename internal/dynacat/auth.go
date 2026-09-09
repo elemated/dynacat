@@ -27,7 +27,7 @@ const AUTH_RATE_LIMIT_MAX_ATTEMPTS = 5
 const AUTH_TOKEN_SECRET_LENGTH = 32
 const AUTH_USERNAME_HASH_LENGTH = 32
 const AUTH_SECRET_KEY_LENGTH = AUTH_TOKEN_SECRET_LENGTH + AUTH_USERNAME_HASH_LENGTH
-const AUTH_TIMESTAMP_LENGTH = 4
+const AUTH_TIMESTAMP_LENGTH = 8
 const AUTH_TOKEN_DATA_LENGTH = AUTH_USERNAME_HASH_LENGTH + AUTH_TIMESTAMP_LENGTH
 
 const AUTH_TOKEN_VALID_PERIOD = 14 * 24 * time.Hour
@@ -53,20 +53,19 @@ type failedAuthAttempt struct {
 	first    time.Time
 }
 
-func generateSessionToken(username string, secret []byte, now time.Time) (string, error) {
+func generateSessionToken(usernameHash []byte, secret []byte, now time.Time) (string, error) {
 	if len(secret) != AUTH_SECRET_KEY_LENGTH {
 		return "", fmt.Errorf("secret key length is not %d bytes", AUTH_SECRET_KEY_LENGTH)
 	}
 
-	usernameHash, err := computeUsernameHash(username, secret)
-	if err != nil {
-		return "", err
+	if len(usernameHash) != AUTH_USERNAME_HASH_LENGTH {
+		return "", fmt.Errorf("username hash length is not %d bytes", AUTH_USERNAME_HASH_LENGTH)
 	}
 
 	data := make([]byte, AUTH_TOKEN_DATA_LENGTH)
 	copy(data, usernameHash)
 	expires := now.Add(AUTH_TOKEN_VALID_PERIOD).Unix()
-	binary.LittleEndian.PutUint32(data[AUTH_USERNAME_HASH_LENGTH:], uint32(expires))
+	binary.LittleEndian.PutUint64(data[AUTH_USERNAME_HASH_LENGTH:], uint64(expires))
 
 	h := hmac.New(sha256.New, secret[0:AUTH_TOKEN_SECRET_LENGTH])
 	h.Write(data)
@@ -77,13 +76,16 @@ func generateSessionToken(username string, secret []byte, now time.Time) (string
 	return encodedToken, nil
 }
 
-func computeUsernameHash(username string, secret []byte) ([]byte, error) {
+// Mixing in the credential invalidates old tokens whenever the password changes.
+func computeUsernameHash(username string, credential string, secret []byte) ([]byte, error) {
 	if len(secret) != AUTH_SECRET_KEY_LENGTH {
 		return nil, fmt.Errorf("secret key length is not %d bytes", AUTH_SECRET_KEY_LENGTH)
 	}
 
 	h := hmac.New(sha256.New, secret[AUTH_TOKEN_SECRET_LENGTH:])
 	h.Write([]byte(username))
+	h.Write([]byte{0})
+	h.Write([]byte(credential))
 
 	return h.Sum(nil), nil
 }
@@ -114,7 +116,7 @@ func verifySessionToken(token string, secretBytes []byte, now time.Time) ([]byte
 		return nil, false, fmt.Errorf("signature does not match")
 	}
 
-	expiresTimestamp := int64(binary.LittleEndian.Uint32(timestampBytes))
+	expiresTimestamp := int64(binary.LittleEndian.Uint64(timestampBytes))
 	if now.Unix() > expiresTimestamp {
 		return nil, false, fmt.Errorf("token has expired")
 	}
@@ -200,7 +202,7 @@ func (a *application) handleAuthenticationAttempt(w http.ResponseWriter, r *http
 		return
 	}
 
-	token, err := generateSessionToken(creds.Username, a.authSecretKey, time.Now())
+	token, err := generateSessionToken(u.usernameHash, a.authSecretKey, time.Now())
 	if err != nil {
 		slog.Error("Could not compute session token during login attempt", "error", err)
 		time.Sleep(waitOnFailure)
@@ -284,9 +286,9 @@ func (a *application) getAuthenticatedUser(w http.ResponseWriter, r *http.Reques
 			if err == nil {
 				username, exists := a.usernameHashToUsername[string(usernameHash)]
 				if exists {
-					if _, exists = a.Config.Auth.Users[username]; exists {
+					if u, exists := a.Config.Auth.Users[username]; exists {
 						if shouldRegenerate {
-							newToken, err := generateSessionToken(username, a.authSecretKey, time.Now())
+							newToken, err := generateSessionToken(u.usernameHash, a.authSecretKey, time.Now())
 							if err != nil {
 								slog.Error("Could not compute session token during regeneration", "error", err)
 							} else {

@@ -110,6 +110,7 @@ type user struct {
 	PasswordHashString string   `yaml:"password-hash"`
 	PasswordHash       []byte   `yaml:"-"`
 	RestrictEditing    []string `yaml:"restrict-editing"`
+	usernameHash       []byte   `yaml:"-"`
 }
 
 type page struct {

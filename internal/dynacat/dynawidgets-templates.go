@@ -25,7 +25,6 @@ const (
 )
 
 type dynawidgetsTemplateMeta struct {
-	Repo            string    `json:"repo"`
 	URL             string    `json:"url"`
 	Title           string    `json:"title,omitempty"`
 	ETag            string    `json:"etag,omitempty"`
@@ -43,13 +42,22 @@ func (meta *dynawidgetsTemplateMeta) checkInterval() time.Duration {
 	return dynawidgetsUpdateCheckInterval
 }
 
+// Includes the branch so two branches cannot share a cached template.
+func dynawidgetsCacheKey(slug string, repo string) string {
+	return slug + "@" + repo
+}
+
 // Keeps generated paths inside the assets directory, whatever the slug looks like.
-func dynawidgetsAssetPath(slug string, suffix string) (string, error) {
+func dynawidgetsAssetPath(slug string, repo string, suffix string) (string, error) {
 	if !dynawidgetsSlugPattern.MatchString(slug) {
 		return "", fmt.Errorf("invalid slug %q", slug)
 	}
 
-	path := filepath.Join(dynawidgetsAssetsDir, slug+suffix)
+	if !dynawidgetsRepoPattern.MatchString(repo) {
+		return "", fmt.Errorf("invalid repo %q", repo)
+	}
+
+	path := filepath.Join(dynawidgetsAssetsDir, dynawidgetsCacheKey(slug, repo)+suffix)
 	absAssets, err := filepath.Abs(dynawidgetsAssetsDir)
 	if err != nil {
 		return path, nil
@@ -62,8 +70,8 @@ func dynawidgetsAssetPath(slug string, suffix string) (string, error) {
 	return path, nil
 }
 
-func dynawidgetsTemplateModTime(slug string) time.Time {
-	path, err := dynawidgetsAssetPath(slug, ".txt")
+func dynawidgetsTemplateModTime(slug string, repo string) time.Time {
+	path, err := dynawidgetsAssetPath(slug, repo, ".txt")
 	if err != nil {
 		return time.Time{}
 	}
@@ -76,7 +84,7 @@ func dynawidgetsTemplateModTime(slug string) time.Time {
 	return info.ModTime()
 }
 
-// Metadata for every cached template, keyed by slug.
+// Metadata for every cached template, keyed by slug and branch.
 var dynawidgetsMetaPath = filepath.Join(dynawidgetsAssetsDir, "templates.meta.json")
 
 var dynawidgetsMetaMu sync.Mutex
@@ -96,11 +104,11 @@ func dynawidgetsReadAllMeta() map[string]dynawidgetsTemplateMeta {
 	return entries
 }
 
-func dynawidgetsReadMeta(slug string) *dynawidgetsTemplateMeta {
+func dynawidgetsReadMeta(slug string, repo string) *dynawidgetsTemplateMeta {
 	dynawidgetsMetaMu.Lock()
 	defer dynawidgetsMetaMu.Unlock()
 
-	meta, ok := dynawidgetsReadAllMeta()[slug]
+	meta, ok := dynawidgetsReadAllMeta()[dynawidgetsCacheKey(slug, repo)]
 	if !ok {
 		return nil
 	}
@@ -108,12 +116,12 @@ func dynawidgetsReadMeta(slug string) *dynawidgetsTemplateMeta {
 	return &meta
 }
 
-func dynawidgetsWriteMeta(slug string, meta *dynawidgetsTemplateMeta) {
+func dynawidgetsWriteMeta(slug string, repo string, meta *dynawidgetsTemplateMeta) {
 	dynawidgetsMetaMu.Lock()
 	defer dynawidgetsMetaMu.Unlock()
 
 	entries := dynawidgetsReadAllMeta()
-	entries[slug] = *meta
+	entries[dynawidgetsCacheKey(slug, repo)] = *meta
 
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
@@ -159,7 +167,7 @@ func dynawidgetsCheckTemplate(slug string, repo string) error {
 	lock.Lock()
 	defer lock.Unlock()
 
-	templatePath, err := dynawidgetsAssetPath(slug, ".txt")
+	templatePath, err := dynawidgetsAssetPath(slug, repo, ".txt")
 	if err != nil {
 		return err
 	}
@@ -170,9 +178,9 @@ func dynawidgetsCheckTemplate(slug string, repo string) error {
 		return nil
 	}
 
-	meta := dynawidgetsReadMeta(slug)
-	if meta == nil || meta.Repo != repo {
-		meta = &dynawidgetsTemplateMeta{Repo: repo}
+	meta := dynawidgetsReadMeta(slug, repo)
+	if meta == nil {
+		meta = &dynawidgetsTemplateMeta{}
 	}
 
 	if time.Since(meta.CheckedAt) < meta.checkInterval() {
@@ -199,7 +207,7 @@ func dynawidgetsCheckTemplate(slug string, repo string) error {
 
 	if notModified || string(body) == string(cached) {
 		meta.UnchangedChecks++
-		dynawidgetsWriteMeta(slug, meta)
+		dynawidgetsWriteMeta(slug, repo, meta)
 		return nil
 	}
 
@@ -209,7 +217,7 @@ func dynawidgetsCheckTemplate(slug string, repo string) error {
 
 	meta.UpdatedAt = now
 	meta.UnchangedChecks = 0
-	dynawidgetsWriteMeta(slug, meta)
+	dynawidgetsWriteMeta(slug, repo, meta)
 	slog.Info("Dynawidget template updated", "slug", slug, "repo", repo, "url", templateURL)
 
 	return nil

@@ -131,10 +131,17 @@ func newApplication(c *config) (*application, error) {
 
 		for username := range config.Auth.Users {
 			user := config.Auth.Users[username]
-			usernameHash, err := computeUsernameHash(username, app.authSecretKey)
+
+			credential := user.PasswordHashString
+			if credential == "" {
+				credential = user.Password
+			}
+
+			usernameHash, err := computeUsernameHash(username, credential, app.authSecretKey)
 			if err != nil {
 				return nil, fmt.Errorf("computing username hash for user %s: %v", username, err)
 			}
+			user.usernameHash = usernameHash
 			app.usernameHashToUsername[string(usernameHash)] = username
 
 			if user.PasswordHashString != "" {
@@ -684,39 +691,39 @@ func (a *application) handlePageContentRequest(w http.ResponseWriter, r *http.Re
 	w.Write(responseBytes.Bytes())
 }
 
-func (a *application) addressOfRequest(r *http.Request) string {
-	remoteAddrWithoutPort := func() string {
-		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			return host
+func remoteAddrWithoutPort(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+func (a *application) ipIsTrustedProxy(ipStr string) bool {
+	ip := net.ParseIP(strings.TrimSpace(ipStr))
+	if ip == nil {
+		return false
+	}
+	for _, n := range a.Config.Server.trustedProxyNets {
+		if n.Contains(ip) {
+			return true
 		}
-		return r.RemoteAddr
 	}
+	return false
+}
 
-	if !a.Config.Server.Proxied {
-		return remoteAddrWithoutPort()
-	}
+// Without trusted-proxies there is nothing to check the peer against.
+func (a *application) requestCameThroughTrustedProxy(r *http.Request) bool {
+	return len(a.Config.Server.trustedProxyNets) == 0 || a.ipIsTrustedProxy(remoteAddrWithoutPort(r))
+}
 
-	remote := remoteAddrWithoutPort()
-	trustedNets := a.Config.Server.trustedProxyNets
+func (a *application) addressOfRequest(r *http.Request) string {
+	remote := remoteAddrWithoutPort(r)
 
-	if len(trustedNets) == 0 {
+	if !a.Config.Server.Proxied || len(a.Config.Server.trustedProxyNets) == 0 {
 		return remote
 	}
 
-	ipIsTrusted := func(ipStr string) bool {
-		ip := net.ParseIP(strings.TrimSpace(ipStr))
-		if ip == nil {
-			return false
-		}
-		for _, n := range trustedNets {
-			if n.Contains(ip) {
-				return true
-			}
-		}
-		return false
-	}
-
-	if !ipIsTrusted(remote) {
+	if !a.ipIsTrustedProxy(remote) {
 		return remote
 	}
 
@@ -731,7 +738,7 @@ func (a *application) addressOfRequest(r *http.Request) string {
 		if candidate == "" {
 			continue
 		}
-		if ipIsTrusted(candidate) {
+		if a.ipIsTrustedProxy(candidate) {
 			continue
 		}
 		return candidate
@@ -810,6 +817,9 @@ func (a *application) handleWidgetActionRequest(w http.ResponseWriter, r *http.R
 	if a.handleAccessControl(w, r, page, showUnauthorizedJSON) {
 		return
 	}
+
+	page.mu.Lock()
+	defer page.mu.Unlock()
 
 	widget.handleRequest(w, r)
 }
@@ -925,7 +935,13 @@ func sameOriginMiddleware(next http.Handler) http.Handler {
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
-			if origin != "" && originHost(origin) != r.Host {
+			if origin == "" {
+				// No Origin and no cookies means an API client, not a browser.
+				if len(r.Cookies()) > 0 {
+					http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+					return
+				}
+			} else if originHost(origin) != r.Host {
 				http.Error(w, "cross-origin request rejected", http.StatusForbidden)
 				return
 			}
@@ -951,7 +967,7 @@ func (a *application) isRequestHTTPS(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	if a.Config.Server.Proxied {
+	if a.Config.Server.Proxied && a.requestCameThroughTrustedProxy(r) {
 		return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 	}
 	return false
