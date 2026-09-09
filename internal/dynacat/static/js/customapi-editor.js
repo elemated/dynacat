@@ -1,3 +1,5 @@
+import { logFailure, responseDetail } from "./editor-log.js";
+
 const PD = typeof pageData !== "undefined" ? pageData : window.pageData;
 const API = `${PD.baseURL}/api/editor`;
 
@@ -410,14 +412,39 @@ function dropTarget(element, className, accepts, onDrop, onHover) {
 }
 
 async function postPreview(extra) {
-    const res = await fetch(`${API}/custom-api/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: state.url, subrequests: subrequestsObject(), ...extra }),
-    });
+    const url = `${API}/custom-api/preview`;
+    const sent = { url: state.url, subrequests: subrequestsObject(), ...extra };
+    // Header values are the one part of a preview that tends to hold a token.
+    const sentSummary = { ...sent, headers: sent.headers && Object.keys(sent.headers) };
+
+    let res;
+    try {
+        res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(sent),
+        });
+    } catch (err) {
+        logFailure("preview never reached the server", { request: `POST ${url}`, sent: sentSummary, error: err });
+        throw new Error("The server did not answer");
+    }
 
     const payload = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(payload.error || "Request failed");
+    if (!res.ok) {
+        logFailure("preview was rejected", { ...responseDetail("POST", url, res, payload), sent: sentSummary });
+        throw new Error(payload.error || "Request failed");
+    }
+
+    if (payload.error) {
+        logFailure(`preview failed while handling the ${payload.stage || "request"}`, {
+            stage: payload.stage,
+            subrequest: payload.subrequest,
+            message: payload.error,
+            hint: payload.hint,
+            sent: sentSummary,
+        });
+    }
+
     return payload;
 }
 

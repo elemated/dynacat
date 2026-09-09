@@ -37,14 +37,16 @@ func (a *application) handleEditorConfigLoad(w http.ResponseWriter, r *http.Requ
 	}
 	user := a.getAuthenticatedUser(w, r)
 	if !a.userCanEditAnything(user) {
-		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		writeEditorForbidden(w)
 		return
 	}
 
 	view, err := a.buildEditorConfigView(user)
 	if err != nil {
 		slog.Error("Editor config load failed", "error", err)
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeEditorError(w, http.StatusInternalServerError, "editor_config_unreadable",
+			"the config could not be read into the editor",
+			"The config file is missing a pages list or failed to parse. The server log holds the parser error.")
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
@@ -56,33 +58,46 @@ func (a *application) handleEditorConfigSave(w http.ResponseWriter, r *http.Requ
 	}
 	user := a.getAuthenticatedUser(w, r)
 	if !a.userCanEditAnything(user) {
-		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		writeEditorForbidden(w)
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, editorMaxBodyBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid body")
+		writeEditorError(w, http.StatusBadRequest, "editor_body_unreadable", "invalid body",
+			"The request body could not be read, most likely because it exceeded the 1 MiB editor limit.")
 		return
 	}
 
 	var mutation editorMutation
 	if err := json.Unmarshal(body, &mutation); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writeEditorError(w, http.StatusBadRequest, "editor_body_not_json", "invalid JSON",
+			"The editor sent a body the server could not decode into a mutation.")
 		return
 	}
 
 	if err := a.applyEditorMutation(user, mutation); err != nil {
-		switch err.(type) {
-		case *editorPermissionError, *editorDisabledError:
-			writeJSONError(w, http.StatusForbidden, err.Error())
+		out := editorErrorBody{Error: err.Error(), Context: mutationContext(mutation)}
+		status := http.StatusBadRequest
+
+		switch e := err.(type) {
+		case *editorPermissionError:
+			status, out.Code = http.StatusForbidden, "editor_write_blocked"
+			out.Hint = "The config directory is read only or owned by another user. Check the volume mount and file ownership."
+		case *editorDisabledError:
+			status, out.Code = http.StatusForbidden, "editor_page_locked"
+			out.Hint = "Editing is off for this page. Check server.allow-editing and the user's restrict-editing list."
 		case *editorValidationError:
-			writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+			status, out.Code, out.Field = http.StatusUnprocessableEntity, "editor_config_invalid", e.field
+			out.Hint = "The change was rolled back because the resulting config did not validate. The message is the config validation error."
 		default:
+			out.Code = "editor_mutation_failed"
+			out.Hint = "The mutation could not be applied to the config document. The server log holds the full error."
 			slog.Error("Editor mutation failed", "op", mutation.Op, "error", err)
-			writeJSONError(w, http.StatusBadRequest, err.Error())
 		}
+
+		writeJSON(w, status, out)
 		return
 	}
 
@@ -95,7 +110,7 @@ func (a *application) handleEditorDynawidgetVariables(w http.ResponseWriter, r *
 		return
 	}
 	if !a.userCanEditAnything(a.getAuthenticatedUser(w, r)) {
-		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		writeEditorForbidden(w)
 		return
 	}
 
@@ -105,13 +120,23 @@ func (a *application) handleEditorDynawidgetVariables(w http.ResponseWriter, r *
 		repo = dynawidgetsDefaultRepo
 	}
 	if !dynawidgetsSlugPattern.MatchString(slug) || !dynawidgetsRepoPattern.MatchString(repo) {
-		writeJSONError(w, http.StatusBadRequest, "invalid widget or repo")
+		writeJSON(w, http.StatusBadRequest, editorErrorBody{
+			Error:   "invalid widget or repo",
+			Code:    "dynawidgets_bad_reference",
+			Hint:    "A slug is lowercase letters, digits and dashes, a repo is owner/name.",
+			Context: map[string]any{"widget": slug, "repo": repo},
+		})
 		return
 	}
 
 	variables, err := dynawidgetsRequiredVariables(slug, repo)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error())
+		writeJSON(w, http.StatusBadGateway, editorErrorBody{
+			Error:   err.Error(),
+			Code:    "dynawidgets_upstream_failed",
+			Hint:    "The template could not be fetched from the repo. Check the slug, network access and the GitHub rate limit.",
+			Context: map[string]any{"widget": slug, "repo": repo},
+		})
 		return
 	}
 
@@ -131,20 +156,22 @@ func (a *application) handleEditorConvert(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !a.userCanEditAnything(a.getAuthenticatedUser(w, r)) {
-		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		writeEditorForbidden(w)
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, editorMaxBodyBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid body")
+		writeEditorError(w, http.StatusBadRequest, "editor_body_unreadable", "invalid body",
+			"The request body could not be read, most likely because it exceeded the 1 MiB editor limit.")
 		return
 	}
 
 	var req editorConvertRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writeEditorError(w, http.StatusBadRequest, "editor_body_not_json", "invalid JSON",
+			"The editor sent a body the server could not decode into a conversion request.")
 		return
 	}
 
@@ -153,7 +180,8 @@ func (a *application) handleEditorConvert(w http.ResponseWriter, r *http.Request
 		var value any = []any{}
 		if len(req.Value) > 0 {
 			if err := json.Unmarshal(req.Value, &value); err != nil {
-				writeJSONError(w, http.StatusBadRequest, "invalid value")
+				writeEditorError(w, http.StatusBadRequest, "convert_value_not_json", "invalid value",
+					"The value being converted to YAML was not valid JSON.")
 				return
 			}
 		}
@@ -161,22 +189,26 @@ func (a *application) handleEditorConvert(w http.ResponseWriter, r *http.Request
 	case "value":
 		node, err := parseYAMLValue(req.Text)
 		if err != nil {
-			writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+			writeEditorError(w, http.StatusUnprocessableEntity, "convert_yaml_invalid", err.Error(),
+				"The pasted text is not valid YAML. The message carries the line the parser stopped on.")
 			return
 		}
 		var value any
 		if err := node.Decode(&value); err != nil {
-			writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+			writeEditorError(w, http.StatusUnprocessableEntity, "convert_yaml_undecodable", err.Error(),
+				"The YAML parsed but could not be decoded into a plain value. Anchors and custom tags are not supported here.")
 			return
 		}
 		encoded, err := json.Marshal(value)
 		if err != nil {
-			writeJSONError(w, http.StatusUnprocessableEntity, "unsupported YAML structure")
+			writeEditorError(w, http.StatusUnprocessableEntity, "convert_yaml_unsupported", "unsupported YAML structure",
+				"The YAML decoded into something JSON cannot represent, such as a map with non-string keys.")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]json.RawMessage{"value": encoded})
 	default:
-		writeJSONError(w, http.StatusBadRequest, "unknown conversion")
+		writeEditorError(w, http.StatusBadRequest, "convert_unknown_target", "unknown conversion",
+			`The "to" field has to be either "yaml" or "value".`)
 	}
 }
 
@@ -188,6 +220,38 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+type editorErrorBody struct {
+	Error   string         `json:"error"`
+	Code    string         `json:"code"`
+	Field   string         `json:"field,omitempty"`
+	Hint    string         `json:"hint,omitempty"`
+	Context map[string]any `json:"context,omitempty"`
+}
+
+func writeEditorError(w http.ResponseWriter, status int, code, message, hint string) {
+	writeJSON(w, status, editorErrorBody{Error: message, Code: code, Hint: hint})
+}
+
+// Which change was rejected, so the console can name the widget instead of only the config error.
+func mutationContext(m editorMutation) map[string]any {
+	ctx := map[string]any{"op": m.Op, "page": m.Page, "column": m.Column, "index": m.Index}
+	if m.WidgetType != "" {
+		ctx["widgetType"] = m.WidgetType
+	}
+	if len(m.Path) > 0 {
+		ctx["path"] = m.Path
+	}
+	if m.PresetKey != "" {
+		ctx["presetKey"] = m.PresetKey
+	}
+	return ctx
+}
+
+func writeEditorForbidden(w http.ResponseWriter) {
+	writeEditorError(w, http.StatusForbidden, "editor_forbidden", editorNotAllowedMessage,
+		"Your user is not listed in server.editing-users or server.editing-groups, or server.allow-editing is off.")
 }
 
 type editorPreviewRequest struct {
@@ -203,6 +267,17 @@ type editorPreviewResponse struct {
 	SubrequestsJSON map[string]json.RawMessage `json:"subrequestsJson,omitempty"`
 	HTML            string                     `json:"html,omitempty"`
 	Error           string                     `json:"error,omitempty"`
+	// Which step failed, since all of them come back as a 200 with an error string.
+	Stage      string `json:"stage,omitempty"`
+	Subrequest string `json:"subrequest,omitempty"`
+	Hint       string `json:"hint,omitempty"`
+}
+
+var editorPreviewHints = map[string]string{
+	"request":         "The primary request never produced a usable response. Check the url, the headers and whether the host needs allow-insecure.",
+	"subrequest":      "A subrequest failed, so no data reached the template. The subrequest key is in this payload.",
+	"template-parse":  "The template text is not valid Go template syntax. The message carries the offending action.",
+	"template-render": "The template parsed but blew up while rendering, usually a field that is missing or of another type than expected.",
 }
 
 // Fetches a custom-api request and renders its template so the editor can show errors before the widget is saved.
@@ -211,26 +286,32 @@ func (a *application) handleEditorCustomAPIPreview(w http.ResponseWriter, r *htt
 		return
 	}
 	if !a.userCanEditAnything(a.getAuthenticatedUser(w, r)) {
-		writeJSONError(w, http.StatusForbidden, editorNotAllowedMessage)
+		writeEditorForbidden(w)
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, editorMaxBodyBytes)
 	var req editorPreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writeEditorError(w, http.StatusBadRequest, "editor_body_not_json", "invalid JSON",
+			"The widget builder sent a body the server could not decode into a preview request.")
 		return
 	}
 
 	// Fetch and template problems are the point of the preview, so they travel in the body instead of a status code.
-	fail := func(err error) {
-		writeJSON(w, http.StatusOK, editorPreviewResponse{Error: err.Error()})
+	fail := func(stage, subrequest string, err error) {
+		writeJSON(w, http.StatusOK, editorPreviewResponse{
+			Error:      err.Error(),
+			Stage:      stage,
+			Subrequest: subrequest,
+			Hint:       editorPreviewHints[stage],
+		})
 	}
 
 	primary := &CustomAPIRequest{URL: req.URL, AllowInsecure: req.AllowInsecure, Headers: req.Headers}
 	primaryData, err := fetchEditorPreviewRequest(primary)
 	if err != nil {
-		fail(err)
+		fail("request", "", err)
 		return
 	}
 
@@ -243,7 +324,7 @@ func (a *application) handleEditorCustomAPIPreview(w http.ResponseWriter, r *htt
 	for key, sub := range req.Subrequests {
 		data, err := fetchEditorPreviewRequest(sub)
 		if err != nil {
-			fail(fmt.Errorf("subrequest %q: %w", key, err))
+			fail("subrequest", key, fmt.Errorf("subrequest %q: %w", key, err))
 			return
 		}
 		subData[key] = data
@@ -260,13 +341,13 @@ func (a *application) handleEditorCustomAPIPreview(w http.ResponseWriter, r *htt
 
 		tmpl, err := template.New("").Funcs(customAPITemplateFuncs(providers)).Parse(req.Template)
 		if err != nil {
-			fail(err)
+			fail("template-parse", "", err)
 			return
 		}
 
 		html, _, err := renderCustomAPIData(primaryData, subData, customAPIOptions{}, tmpl)
 		if err != nil {
-			fail(err)
+			fail("template-render", "", err)
 			return
 		}
 		response.HTML = string(html)

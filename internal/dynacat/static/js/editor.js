@@ -1,3 +1,5 @@
+import { logFailure, responseDetail } from "./editor-log.js";
+
 const PD = typeof pageData !== "undefined" ? pageData : window.pageData;
 const API = `${PD.baseURL}/api/editor`;
 
@@ -38,6 +40,11 @@ async function enterEditor() {
         state.config = config;
         state.pageIndex = config.pages.findIndex((p) => p.slug === PD.slug);
     } catch (err) {
+        logFailure("editor could not start", {
+            "loaded from": `${API}/schema and ${API}/config`,
+            status: err.status,
+            error: err,
+        });
         toast(err.status === 401 ? "Log in to edit this page" : "Could not load editor", "negative");
         return;
     }
@@ -97,7 +104,11 @@ function exitEditor() {
 
 async function apiGet(path) {
     const res = await fetch(API + path);
-    if (!res.ok) throw { status: res.status };
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        logFailure(`GET ${path} was rejected`, responseDetail("GET", API + path, res, body));
+        throw { status: res.status };
+    }
     return res.json();
 }
 
@@ -108,7 +119,10 @@ async function apiPost(path, body) {
         body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Request failed");
+    if (!res.ok) {
+        logFailure(`POST ${path} was rejected`, { ...responseDetail("POST", API + path, res, data), sent: body });
+        throw new Error(data.error || "Request failed");
+    }
     return data;
 }
 
@@ -116,13 +130,26 @@ const convertToYAML = async (value) => (await apiPost("/convert", { to: "yaml", 
 const convertToValue = async (text) => (await apiPost("/convert", { to: "value", text })).value;
 
 async function commit(mutation) {
-    const res = await fetch(`${API}/config`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mutation),
-    });
+    let res;
+    try {
+        res = await fetch(`${API}/config`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(mutation),
+        });
+    } catch (err) {
+        logFailure("save never reached the server", { request: `POST ${API}/config`, mutation, error: err });
+        toast("Save failed, the server did not answer", "negative");
+        return false;
+    }
+
     if (res.status === 204) return true;
+
     const body = await res.json().catch(() => ({}));
+    logFailure(`save "${mutation.op}" was rejected`, {
+        ...responseDetail("POST", `${API}/config`, res, body),
+        mutation,
+    });
     toast(body.error || "Save failed", "negative");
     return false;
 }
@@ -811,8 +838,14 @@ async function confirmDynawidgetVariables({ widget, repo }) {
     let variables;
     try {
         ({ variables } = await apiGet(`/dynawidgets/variables?${params}`));
-    } catch {
+    } catch (err) {
         // The template may be unreachable, and the save itself still reports what went wrong.
+        logFailure("dynawidget variables could not be checked, saving anyway", {
+            widget,
+            repo: repo || "default repo",
+            status: err.status,
+            error: err,
+        });
         return true;
     }
 

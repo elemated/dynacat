@@ -205,7 +205,10 @@ func isWriteBlockedError(err error) bool {
 	return os.IsPermission(err) || errors.Is(err, syscall.EROFS)
 }
 
-type editorValidationError struct{ err error }
+type editorValidationError struct {
+	err   error
+	field string
+}
 
 func (e *editorValidationError) Error() string { return e.err.Error() }
 
@@ -628,7 +631,7 @@ func applyPageFields(pageNode *yaml.Node, fields map[string]any) error {
 // arbitrary file.
 func rejectIncludeDirective(key string, node *yaml.Node) error {
 	if key == "$include" || key == "!include" || configIncludePattern.MatchString(nodeToText(node)) {
-		return &editorValidationError{fmt.Errorf("field %s must not contain an include directive", key)}
+		return &editorValidationError{err: fmt.Errorf("field %s must not contain an include directive", key), field: key}
 	}
 
 	return nil
@@ -761,7 +764,7 @@ func (a *application) writeConfigCandidates(candidates map[string][]byte) error 
 
 	for path, candidate := range candidates {
 		if err := checkIncludesStayInConfigDir(candidate, filepath.Dir(a.configPath)); err != nil {
-			return &editorValidationError{err}
+			return &editorValidationError{err: err, field: "$include"}
 		}
 
 		perms[path] = os.FileMode(0o644)
@@ -801,7 +804,7 @@ func (a *application) writeConfigCandidates(candidates map[string][]byte) error 
 	}
 	if err != nil {
 		rollback()
-		return &editorValidationError{err}
+		return &editorValidationError{err: err}
 	}
 
 	return nil
