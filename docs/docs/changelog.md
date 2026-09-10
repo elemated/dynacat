@@ -14,6 +14,7 @@
 - Added a function in `calendar` widget when showing releases to also show release type
 - Added a function in `calendar` widget to also show current state of the media e.g. grabbed
 - Fixed issue with `search` widget highlighting
+- Fixed Jellyfin issue where `playing` widget couldn't be resolved because of the api changes.
 - Added a read-only JSON API for accessing widget data
 - Added option to mark `monitor` as disabled
 - Added `show-history` option to `monitor` widget showing a bar of the last hour of status checks

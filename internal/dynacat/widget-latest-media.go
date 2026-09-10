@@ -396,12 +396,13 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatest(ctx context.Context, ho
 	client := ternary(host.AllowInsecure, defaultInsecureHTTPClient, defaultHTTPClient)
 	baseURL := strings.TrimRight(host.BaseURL, "/")
 
-	usersURL := fmt.Sprintf("%s/Users?api_key=%s", baseURL, host.Token)
+	usersURL := fmt.Sprintf("%s/Users", baseURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", usersURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", jellyfinAuthHeader(host.Token))
 
 	users, err := decodeJsonFromRequest[jellyfinUsersResponse](client, req)
 	if err != nil {
@@ -416,12 +417,13 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatest(ctx context.Context, ho
 		return widget.fetchJellyfinEmbyLatestFromParent(ctx, client, host, serverType, baseURL, userID, "")
 	}
 
-	viewsURL := fmt.Sprintf("%s/UserViews?api_key=%s&userId=%s", baseURL, host.Token, userID)
+	viewsURL := fmt.Sprintf("%s/UserViews?userId=%s", baseURL, userID)
 	req, err = http.NewRequestWithContext(ctx, "GET", viewsURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", jellyfinAuthHeader(host.Token))
 
 	views, err := decodeJsonFromRequest[jellyfinUserViewsResponse](client, req)
 	if err != nil {
@@ -453,8 +455,8 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatestFromParent(
 	userID string,
 	parentID string,
 ) ([]latestMediaItem, error) {
-	url := fmt.Sprintf("%s/Users/%s/Items/Latest?api_key=%s&Limit=%d&Fields=DateCreated,RunTimeTicks,AlbumArtist",
-		baseURL, userID, host.Token, widget.ItemCount)
+	url := fmt.Sprintf("%s/Users/%s/Items/Latest?Limit=%d&Fields=DateCreated,RunTimeTicks,AlbumArtist",
+		baseURL, userID, widget.ItemCount)
 	if parentID != "" {
 		url += "&ParentId=" + parentID
 	}
@@ -464,6 +466,7 @@ func (widget *latestMediaWidget) fetchJellyfinEmbyLatestFromParent(
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", jellyfinAuthHeader(host.Token))
 
 	rawItems, err := decodeJsonFromRequest[[]jellyfinLatestItem](client, req)
 	if err != nil {

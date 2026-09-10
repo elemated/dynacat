@@ -123,6 +123,11 @@ func setBrowserUserAgentHeader(request *http.Request) {
 	request.Header.Set("User-Agent", getBrowserUserAgentHeader())
 }
 
+// Jellyfin/Emby 12+ rejects the legacy ?api_key= query param; use the header instead.
+func jellyfinAuthHeader(token string) string {
+	return fmt.Sprintf(`MediaBrowser Token="%s"`, token)
+}
+
 func fetchRequestBody(client requestDoer, request *http.Request) (int, []byte, error) {
 	if request.Method == "" || request.Method == http.MethodGet {
 		status, _, body, err := globalSharedFetcher.do(client, request, sharedFetchMaxAgeForRequest(request))

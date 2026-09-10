@@ -520,10 +520,7 @@ func (widget *playingWidget) fetchPlexSessions(ctx context.Context, host *Playin
 }
 
 func (widget *playingWidget) fetchJellyfinSessions(ctx context.Context, host *PlayingHostConfig) ([]mediaSession, error) {
-	url := fmt.Sprintf("%s/Sessions?api_key=%s&activeWithinSeconds=30",
-		strings.TrimRight(host.BaseURL, "/"),
-		host.Token,
-	)
+	url := fmt.Sprintf("%s/Sessions?activeWithinSeconds=30", strings.TrimRight(host.BaseURL, "/"))
 
 	if widget.Debug {
 		slog.Info("Jellyfin: fetching sessions", "url", url)
@@ -535,6 +532,7 @@ func (widget *playingWidget) fetchJellyfinSessions(ctx context.Context, host *Pl
 	}
 
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", jellyfinAuthHeader(host.Token))
 
 	client := ternary(host.AllowInsecure, defaultInsecureHTTPClient, defaultHTTPClient)
 	response, err := decodeJsonFromRequest[jellyfinEmbySessionsResponse](client, req)
@@ -558,10 +556,7 @@ func (widget *playingWidget) fetchJellyfinSessions(ctx context.Context, host *Pl
 }
 
 func (widget *playingWidget) fetchEmbySessions(ctx context.Context, host *PlayingHostConfig) ([]mediaSession, error) {
-	url := fmt.Sprintf("%s/Sessions?api_key=%s&activeWithinSeconds=30",
-		strings.TrimRight(host.BaseURL, "/"),
-		host.Token,
-	)
+	url := fmt.Sprintf("%s/Sessions?activeWithinSeconds=30", strings.TrimRight(host.BaseURL, "/"))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -569,6 +564,7 @@ func (widget *playingWidget) fetchEmbySessions(ctx context.Context, host *Playin
 	}
 
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", jellyfinAuthHeader(host.Token))
 
 	client := ternary(host.AllowInsecure, defaultInsecureHTTPClient, defaultHTTPClient)
 	response, err := decodeJsonFromRequest[jellyfinEmbySessionsResponse](client, req)
