@@ -71,7 +71,7 @@ export async function openCustomAPIEditor(context) {
     ctx = context;
     state = await loadState();
     buildUI();
-    renderSubrequests();
+    renderNetwork();
     renderAll();
     fetchData();
 }
@@ -165,9 +165,13 @@ async function loadState() {
         }
     }
 
+    const url = ctx.read("url") || "";
+
     return {
-        url: ctx.read("url") || "",
+        url,
+        headers: pairsFrom(await readConfig("headers")),
         subrequests: await readSubrequests(),
+        netOpen: url.trim() === "",
         rows,
         data: null,
         filter: "",
@@ -181,22 +185,43 @@ async function loadState() {
     };
 }
 
-async function readSubrequests() {
-    const text = ctx.read("subrequests");
-    if (!text) return [];
+async function readConfig(name) {
+    const text = ctx.read(name);
+    if (!text) return {};
 
     try {
-        const value = typeof text === "string" ? await ctx.toValue(text) : text;
-        return Object.entries(value || {}).map(([name, req]) => ({ name, url: (req && req.url) || "" }));
+        return (typeof text === "string" ? await ctx.toValue(text) : text) || {};
     } catch {
-        return [];
+        return {};
     }
+}
+
+function pairsFrom(map) {
+    return Object.entries(map || {}).map(([key, value]) => ({ key, value: String(value ?? "") }));
+}
+
+function pairsObject(pairs) {
+    const out = {};
+    for (const pair of pairs) {
+        if (pair.key.trim() !== "") out[pair.key.trim()] = pair.value;
+    }
+    return out;
+}
+
+async function readSubrequests() {
+    return Object.entries(await readConfig("subrequests")).map(([name, req]) => ({
+        name,
+        url: (req && req.url) || "",
+        headers: pairsFrom(req && req.headers),
+    }));
 }
 
 function subrequestsObject() {
     const out = {};
     for (const sub of state.subrequests) {
-        if (sub.name.trim() !== "") out[sub.name.trim()] = { url: sub.url };
+        if (sub.name.trim() === "") continue;
+        const headers = pairsObject(sub.headers);
+        out[sub.name.trim()] = Object.keys(headers).length > 0 ? { url: sub.url, headers } : { url: sub.url };
     }
     return out;
 }
@@ -287,12 +312,6 @@ function buildUI() {
     const overlay = div("editor-ui capi-editor");
 
     const topbar = div("capi-topbar");
-    const url = input(state.url, "Request url, e.g. https://api.example.com/stats", (value) => {
-        state.url = value;
-        state.dirty = true;
-    });
-    const urlWrapper = div("capi-url");
-    urlWrapper.append(url);
 
     const previewToggle = button("Preview", "editor-btn capi-preview-toggle");
     previewToggle.addEventListener("click", togglePreview);
@@ -301,9 +320,8 @@ function buildUI() {
     refresh.addEventListener("click", fetchData);
     const tools = div("capi-topbar-tools");
     tools.append(previewToggle, refresh);
-    topbar.append(urlWrapper, tools);
 
-    const subs = div("capi-sources");
+    const net = div("capi-net");
 
     const data = div("capi-pane capi-data");
     const palette = div("capi-palette");
@@ -312,7 +330,7 @@ function buildUI() {
         renderFields();
     });
     const fields = div("capi-fields");
-    data.append(subs, palette, labeled("Find a field", filter), fields);
+    data.append(net, palette, labeled("Find a field", filter), fields);
 
     const canvas = div("capi-canvas");
     const inspector = div("capi-pane capi-inspector");
@@ -325,13 +343,13 @@ function buildUI() {
     const apply = button("Apply and save", "editor-btn editor-btn-primary");
     apply.addEventListener("click", () => applyChanges(apply));
     const actions = div("capi-topbar-actions");
-    actions.append(status, cancel, apply);
+    actions.append(status, tools, cancel, apply);
     topbar.append(actions);
 
     overlay.append(topbar, body);
     document.body.append(overlay);
 
-    ui = { overlay, subs, previewToggle, palette, fields, canvas, inspector, status };
+    ui = { overlay, net, previewToggle, palette, fields, canvas, inspector, status };
 
     dropTarget(canvas, "capi-canvas-drop", (d) => d.type === "block", (d) => {
         state.rows.push({ blocks: [] });
@@ -413,7 +431,7 @@ function dropTarget(element, className, accepts, onDrop, onHover) {
 
 async function postPreview(extra) {
     const url = `${API}/custom-api/preview`;
-    const sent = { url: state.url, subrequests: subrequestsObject(), ...extra };
+    const sent = { url: state.url, headers: pairsObject(state.headers), subrequests: subrequestsObject(), ...extra };
     // Header values are the one part of a preview that tends to hold a token.
     const sentSummary = { ...sent, headers: sent.headers && Object.keys(sent.headers) };
 
@@ -1158,15 +1176,87 @@ function compare(number, rule) {
     return number === than;
 }
 
-function renderSubrequests() {
-    ui.subs.replaceChildren(div("capi-pane-title", "Subrequests"));
+function networkSummary() {
+    const parts = [state.url.trim() || "No request url"];
+    if (state.headers.length > 0) parts.push(`${state.headers.length} headers`);
+    if (state.subrequests.length > 0) parts.push(`${state.subrequests.length} subrequests`);
+    return parts.join(" - ");
+}
+
+function headersEditor(pairs) {
+    const wrapper = div("capi-headers");
+    wrapper.append(div("capi-field-label", "Headers"));
+
+    pairs.forEach((pair, index) => {
+        const row = div("capi-header-row");
+        const remove = iconBtn("Remove header", iconTrash, () => {
+            pairs.splice(index, 1);
+            state.dirty = true;
+            renderNetwork();
+        });
+
+        // The name and its remove button share a line, the longer value gets the next one.
+        row.append(
+            input(pair.key, "Authorization", (value) => {
+                pair.key = value;
+                state.dirty = true;
+            }),
+            remove,
+            input(pair.value, "Bearer ${API_KEY}", (value) => {
+                pair.value = value;
+                state.dirty = true;
+            })
+        );
+        wrapper.append(row);
+    });
+
+    const add = button("Add header", "editor-btn capi-mini-btn");
+    add.addEventListener("click", () => {
+        pairs.push({ key: "", value: "" });
+        state.dirty = true;
+        renderNetwork();
+    });
+    wrapper.append(add);
+
+    return wrapper;
+}
+
+function renderNetwork() {
+    ui.net.className = `capi-net${state.netOpen ? "" : " capi-net-collapsed"}`;
+    ui.net.replaceChildren();
+
+    const toggle = () => {
+        state.netOpen = !state.netOpen;
+        renderNetwork();
+    };
+
+    const chevron = iconBtn(state.netOpen ? "Collapse network" : "Expand network", iconChevron, toggle);
+    chevron.classList.add("capi-net-toggle");
+    chevron.setAttribute("aria-expanded", String(state.netOpen));
+
+    const head = div("capi-net-head");
+    head.append(div("capi-pane-title", "Network"), chevron);
+    head.addEventListener("click", toggle);
+    ui.net.append(head);
+
+    if (!state.netOpen) return ui.net.append(div("capi-net-summary", networkSummary()));
+
+    const body = div("capi-net-body");
+    body.append(
+        labeled("Request url", input(state.url, "https://api.example.com/stats", (value) => {
+            state.url = value;
+            state.dirty = true;
+        })),
+        headersEditor(state.headers),
+        div("capi-field-label", "Subrequests")
+    );
 
     state.subrequests.forEach((sub, index) => {
         const card = div("capi-source");
         const remove = iconBtn("Remove subrequest", iconTrash, () => {
             state.subrequests.splice(index, 1);
             state.dirty = true;
-            renderSubrequests();
+            renderNetwork();
         });
 
         card.append(withRemove(labeled("Name", input(sub.name, "tags", (value) => {
@@ -1178,18 +1268,21 @@ function renderSubrequests() {
             labeled("Url", input(sub.url, "https://api.example.com/other", (value) => {
                 sub.url = value;
                 state.dirty = true;
-            }))
+            })),
+            headersEditor(sub.headers)
         );
-        ui.subs.append(card);
+        body.append(card);
     });
 
     const add = button("Add subrequest", "editor-btn capi-mini-btn");
     add.addEventListener("click", () => {
-        state.subrequests.push({ name: "", url: "" });
+        state.subrequests.push({ name: "", url: "", headers: [] });
         state.dirty = true;
-        renderSubrequests();
+        renderNetwork();
     });
-    ui.subs.append(add);
+    body.append(add);
+
+    ui.net.append(body);
 }
 
 function renderInspector() {
@@ -1970,6 +2063,9 @@ function validate() {
         if (!sub.name.trim() || !sub.url.trim()) problems.push("Every subrequest needs a name and a url");
     }
 
+    const headers = [state.headers, ...state.subrequests.map((sub) => sub.headers)].flat();
+    if (headers.some((header) => !header.key.trim())) problems.push("Every header needs a name");
+
     return [...new Set(problems)];
 }
 
@@ -1987,6 +2083,10 @@ async function applyChanges(applyBtn) {
 
         ctx.write("url", state.url);
         ctx.write("template", template);
+
+        const headers = pairsObject(state.headers);
+        if (Object.keys(headers).length > 0) await ctx.write("headers", headers);
+        else ctx.clear("headers");
 
         if (state.subrequests.length > 0) await ctx.write("subrequests", subrequestsObject());
         else ctx.clear("subrequests");

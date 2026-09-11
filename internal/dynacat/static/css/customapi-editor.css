@@ -49,45 +49,30 @@
     z-index: 66;
 }
 
-/* The side columns share the leftover width evenly, so the tools column lands in the middle of the bar. */
 .capi-topbar {
     grid-row: 1;
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
     align-items: center;
-    gap: 12px;
     padding: 9px 20px;
     border-bottom: 1px solid var(--color-separator);
 }
 
+/* The rule keeps the data tools reading apart from the save actions they sit next to. */
 .capi-topbar-tools {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+    padding-right: 12px;
+    border-right: 1px solid var(--color-separator);
 }
 
 .capi-topbar-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    justify-self: end;
+    flex: 1 1 auto;
     gap: 12px;
-    min-width: 0;
-    max-width: 100%;
-}
-
-.capi-url {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1 1 auto;
-    min-width: 0;
-    max-width: 480px;
-}
-
-.capi-url > .editor-input {
-    flex: 1 1 auto;
     min-width: 0;
 }
 
@@ -195,13 +180,70 @@
     border-left: 1px solid var(--color-separator);
 }
 
-/* Brighter than a plain separator, so the split between sources and fields reads as deliberate. */
-.capi-sources {
+.capi-net {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     padding-bottom: 16px;
     border-bottom: 1px solid color-mix(in srgb, var(--color-text-subdue) 45%, var(--color-separator));
+}
+
+.capi-net-collapsed {
+    gap: 4px;
+}
+
+.capi-net-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.capi-net-toggle svg {
+    transition: transform 0.15s ease;
+}
+
+.capi-net-toggle[aria-expanded="true"] svg {
+    transform: rotate(90deg);
+}
+
+.capi-net-summary {
+    font-size: 1.2rem;
+    color: var(--color-text-subdue);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.capi-net-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.capi-headers {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.capi-header-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.capi-header-row > .editor-input {
+    min-width: 0;
+    padding: 5px 8px;
+    font-size: 1.2rem;
+}
+
+.capi-header-row > .editor-input:last-child {
+    grid-column: 1 / -1;
 }
 
 .capi-palette {
@@ -253,12 +295,12 @@
     right: 0;
 }
 
-.capi-sources .capi-mini-btn {
+.capi-net .capi-mini-btn {
     width: 100%;
     color: var(--color-text-subdue);
 }
 
-.capi-sources .capi-mini-btn:hover {
+.capi-net .capi-mini-btn:hover {
     color: var(--color-text-highlight);
 }
 
