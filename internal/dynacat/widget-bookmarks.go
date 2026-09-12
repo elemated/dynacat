@@ -77,12 +77,8 @@ func (widget *bookmarksWidget) initialize() error {
 			if link.Target == "" {
 				if group.Target != "" {
 					link.Target = group.Target
-				} else {
-					if link.SameTab {
-						link.Target = ""
-					} else {
-						link.Target = "_blank"
-					}
+				} else if !link.SameTab {
+					link.Target = "_blank"
 				}
 			}
 		}
